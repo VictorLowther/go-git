@@ -15,4 +15,7 @@ func main() {
 	for k,v := range c.Find("user.") {
 		fmt.Printf("%s: %v\n",k,v)
 	}
+	c.Set("foo.bar","bar")
+	v,ok := c.Get("foo.bar")
+	fmt.Printf("%v: %v\n",v,ok)
 }

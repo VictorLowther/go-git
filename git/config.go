@@ -32,11 +32,30 @@ func (c *Config) Get(k string) (v string, f bool) {
 	return
 }
 
+func (c *Config) maybeKillSection(prefix string) {
+	if len(c.Find(prefix)) == 0 {
+		cmd, _, err := c.repo.Git("config","--remove-section", prefix)
+		if cmd.Run() != nil {
+			panic(err.String())
+		}
+	}
+}
+
 func (c *Config) Unset(k string) {
 	if _,e := c.Get(k); e == true {
 		delete(c.cfg,k)
-		cmd, _, _ := c.repo.Git("config", "--unset-all",k)
-		_ = cmd.Run()
+		cmd, _, err := c.repo.Git("config", "--unset-all",k)
+		if cmd.Run() == nil {
+			parts := strings.Split(k,".")
+			switch len(parts) {
+			case 0:  panic("Cannot happen!")
+			case 1:  c.maybeKillSection(k)
+			case 2:  c.maybeKillSection(parts[0])
+			default: c.maybeKillSection(strings.Join(parts[0:len(parts)-2],"."))
+			}
+		} else {
+			panic(err.String())
+		}
 	}
 }
 
