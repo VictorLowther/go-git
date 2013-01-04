@@ -18,7 +18,7 @@ func main() {
 	c.Set("foo.bar","bar")
 	v,ok := c.Get("foo.bar")
 	fmt.Printf("%v: %v\n",v,ok)
-	if clean,statLines := r.StatusClean(); clean {
+	if clean,statLines := r.IsClean(); clean {
 		fmt.Println("Repo is clean")
 	} else {
 		for _,l := range statLines {

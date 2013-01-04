@@ -166,7 +166,7 @@ func (r *Repo) mapStatus() (res []*statLine) {
 	return
 }
 
-func (r *Repo) StatusClean() (res bool, statLines []*statLine) {
+func (r *Repo) IsClean() (res bool, statLines []*statLine) {
 	statLines = r.mapStatus()
 	res = len(statLines) == 0
 	return
