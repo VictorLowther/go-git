@@ -8,6 +8,7 @@ import (
 	"strings"
 	"bytes"
 	"errors"
+	"regexp"
 )
 
 type Repo struct {
@@ -15,12 +16,25 @@ type Repo struct {
 }
 
 var gitCmd string
+var statusRE *regexp.Regexp
+var statMap map[string]string
 
 func init() {
 	var err error
 	if gitCmd,err = exec.LookPath("git"); err != nil {
 		panic("Cannot find git command!")
 	}
+	statusRE = regexp.MustCompile("^([ MADRCU!?])([ MADRCU?!]) (.*)$")
+	statMap = make(map[string]string)
+	statMap[" "]="unmodified"
+	statMap["M"]="modified"
+	statMap["A"]="added"
+	statMap["D"]="deleted"
+	statMap["R"]="renamed"
+	statMap["C"]="copied"
+	statMap["U"]="unmerged"
+	statMap["?"]="untracked"
+	statMap["!"]="ignored"
 }
 
 func findRepo(path string) (found bool, gitdir, workdir string) {
@@ -105,5 +119,55 @@ func Clone(source, target string, args ...string) (res *Repo, err error) {
 	return
 }
 
+type statLine struct {
+	indexStat, workStat, oldPath, newPath string
+}
 
+func (s *statLine) Print() string {
+	var res string
+	if s.indexStat == "R" {
+		res = fmt.Sprintf("%s was renamed to %s\n",s.oldPath,s.newPath)
+	}
+	res = res + fmt.Sprintf("%s is %s in the index and %s in the working tree.",
+		s.newPath,
+		statMap[s.indexStat],
+		statMap[s.workStat])
+	return res
+}
 
+func (r *Repo) mapStatus() (res []*statLine) {
+	var thisStat *statLine
+	cmd, out, err := r.Git("status","--porcelain","-z")
+	if cmd.Run() != nil {
+		panic(err.String())
+	}
+	for {
+		line,err := out.ReadString(0)
+		if err != nil { break }
+		parts := statusRE.FindStringSubmatch(line)
+		if parts != nil {
+			if thisStat != nil {
+				res = append(res,thisStat)
+			}
+			thisStat = new(statLine)
+			thisStat.indexStat = parts[1]
+			thisStat.workStat = parts[2]
+			thisStat.oldPath = parts[3]
+			thisStat.newPath = parts[3]
+		} else if thisStat != nil {
+			thisStat.newPath = line
+		} else {
+			panic("Cannot happen!")
+		}
+	}
+	if thisStat != nil {
+		res = append(res,thisStat)
+	}
+	return
+}
+
+func (r *Repo) StatusClean() (res bool, statLines []*statLine) {
+	statLines = r.mapStatus()
+	res = len(statLines) == 0
+	return
+}
