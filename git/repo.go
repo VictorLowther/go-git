@@ -13,11 +13,22 @@ import (
 
 type Repo struct {
 	gitDir, workDir string
+	Refs map[string]*Ref
 }
 
 var gitCmd string
 var statusRE *regexp.Regexp
-var statMap map[string]string
+var statMap = map[string]string {
+	" ": "unmodified",
+	"M": "modified",
+	"A": "added",
+	"D": "deleted",
+	"R": "renamed",
+	"C": "copied",
+	"U": "unmerged",
+	"?": "untracked",
+	"!": "ignored",
+}
 
 func init() {
 	var err error
@@ -25,16 +36,6 @@ func init() {
 		panic("Cannot find git command!")
 	}
 	statusRE = regexp.MustCompile("^([ MADRCU!?])([ MADRCU?!]) (.*)$")
-	statMap = make(map[string]string)
-	statMap[" "]="unmodified"
-	statMap["M"]="modified"
-	statMap["A"]="added"
-	statMap["D"]="deleted"
-	statMap["R"]="renamed"
-	statMap["C"]="copied"
-	statMap["U"]="unmerged"
-	statMap["?"]="untracked"
-	statMap["!"]="ignored"
 }
 
 func findRepo(path string) (found bool, gitdir, workdir string) {
@@ -70,6 +71,7 @@ func Open(path string) (repo *Repo, err error) {
 			repo = new(Repo)
 			repo.gitDir = gitdir
 			repo.workDir = workdir
+			repo.Refs = repo.refs()
 			return
 		}
 		parent := filepath.Dir(path)

@@ -25,4 +25,10 @@ func main() {
 			fmt.Printf("%s\n",l.Print())
 		}
 	}
+	fmt.Printf("Creating throwaway branch\n")
+	br,_ := r.Branch("throwaway","HEAD")
+	for name,r := range r.Refs {
+		fmt.Printf("%s: %s\n",name,r.SHA)
+	}
+	br.Delete()
 }
