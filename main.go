@@ -26,9 +26,17 @@ func main() {
 		}
 	}
 	fmt.Printf("Creating throwaway branch\n")
-	br,_ := r.Branch("throwaway","HEAD")
+	br,err := r.Branch("throwaway","HEAD")
+	if err != nil {
+		panic(err)
+	}
+	tag, err := r.Tag("faketag",br)
+	if err != nil {
+		panic(err)
+	}
 	for name,r := range r.Refs {
 		fmt.Printf("%s: %s\n",name,r.SHA)
 	}
+	tag.Delete()
 	br.Delete()
 }

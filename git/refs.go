@@ -66,19 +66,21 @@ func (r *Ref) Delete() (err error) {
 	return
 }
 
-// Create a branch
-func (r *Repo) Branch(name string, base interface{}) (ref *Ref, err error) {
+func (r *Repo) make_ref(reftype string, name string, base interface{}) (ref *Ref, err error) {
 	if name == "HEAD" {
 		return nil, errors.New("Cannot create a branch named HEAD.")
 	} else if r.Refs[name] != nil {
 		return nil, errors.New(name + " already exists.")
 	} else {
+		if ! (reftype == "branch" || reftype == "tag") {
+			return nil,errors.New("Unknown ref type!")
+		}
 		switch i := base.(type) {
-		case Ref:
-			cmd, _, _ := r.Git("branch", name, i.SHA)
+		case *Ref:
+			cmd, _, _ := r.Git(reftype, name, i.Name())
 			err = cmd.Run()
 		case string:
-			cmd, _, _ := r.Git("branch", name, i)
+			cmd, _, _ := r.Git(reftype, name, i)
 			err = cmd.Run()
 		default:
 			return nil, errors.New("Unknown type for base!")
@@ -89,6 +91,18 @@ func (r *Repo) Branch(name string, base interface{}) (ref *Ref, err error) {
 	}
 	r.Refs = r.refs()
 	return r.Refs[name], nil
+}
+
+// Create a branch
+func (r *Repo) Branch(name string, base interface{}) (ref *Ref, err error) {
+	ref, err = r.make_ref("branch", name, base)
+	return
+}
+
+// Create a tag
+func (r *Repo) Tag(name string, base interface{}) (ref *Ref, err error) {
+	ref, err = r.make_ref("tag", name, base)
+	return
 }
 
 func (r *Ref) Checkout() (err error) {
