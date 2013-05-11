@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"strings"
+	"fmt"
 )
 
 // Refs are the basic way to point at an individual commit in Git.
@@ -44,6 +45,14 @@ func (r *Ref) Name() (res string) {
 	return k[(len(k) - 1)]
 }
 
+func (r *Ref) Remote() (remote string, err error) {
+	if ! r.IsRemote() {
+		return "", fmt.Errorf("%s is not a remote ref!",r.Path)
+	}
+	k := strings.SplitN(r.Path,"/",4)
+	return k[2],nil
+}
+
 // Delete a ref.
 func (r *Ref) Delete() (err error) {
 	var c string
@@ -66,14 +75,41 @@ func (r *Ref) Delete() (err error) {
 	return
 }
 
+// Force a local ref (which should be a branch) to track an identically-named branch from that remote.
+func (r *Ref) TrackRemote(remote string) (err error) {
+	if !r.IsLocal() {
+		return fmt.Errorf("%s is not a branch, we cannot track it.",r.Path)
+	}
+	cfg, err := r.r.Config()
+	if err != nil {
+		return err
+	}
+	section := "branch."+r.Name()
+	branch_remote, branch_remote_exists := cfg.Get(section + ".remote")
+	branch_merge, branch_merge_exists := cfg.Get(section + ".merge")
+	if branch_remote_exists &&
+		branch_merge_exists &&
+		branch_remote == remote &&
+		branch_merge == r.Path {
+		// We already have the right config.  Nothing to do.
+		return nil
+	}
+	if branch_remote_exists || branch_merge_exists {
+		cfg.maybeKillSection(section)
+	}
+	cfg.Set(section + ".remote",remote)
+	cfg.Set(section + ".merge",r.Path)
+	return nil
+}
+
 func (r *Repo) make_ref(reftype string, name string, base interface{}) (ref *Ref, err error) {
 	if name == "HEAD" {
 		return nil, errors.New("Cannot create a branch named HEAD.")
 	} else if r.Refs[name] != nil {
 		return nil, errors.New(name + " already exists.")
 	} else {
-		if ! (reftype == "branch" || reftype == "tag") {
-			return nil,errors.New("Unknown ref type!")
+		if !(reftype == "branch" || reftype == "tag") {
+			return nil, errors.New("Unknown ref type!")
 		}
 		switch i := base.(type) {
 		case *Ref:
@@ -114,7 +150,7 @@ func (r *Ref) Checkout() (err error) {
 	}
 	cmd, _, _ := r.r.Git("checkout", "-q", ref)
 	err = cmd.Run()
- 	return
+	return
 }
 
 func (r *Repo) Checkout(ref string) (err error) {
