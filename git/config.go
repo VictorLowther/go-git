@@ -18,11 +18,17 @@ func (r *Repo) Config() (res *Config, err error) {
 	res = new(Config)
 	res.cfg = make(map[string]string)
 	res.repo = r
-	for {
-		line,err := stdout.ReadString(0)
-		if err != nil { break }
+	for _,line := range strings.Split(stdout.String(),"\x00") {
 		parts := strings.SplitN(line,"\n",2)
-		res.cfg[parts[0]]=parts[1]
+		if len(parts) != 2 {
+			continue
+		}
+		k := strings.TrimSpace(parts[0])
+		v := strings.TrimSpace(parts[1])
+		if k == "" {
+			continue
+		}
+		res.cfg[k]=v
 	}
 	return res,nil
 }
