@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"fmt"
+	"bufio"
 )
 
 // Refs are the basic way to point at an individual commit in Git.
@@ -37,6 +38,10 @@ func (r *Ref) IsTag() bool {
 // or points directly at a commit.
 func (r *Ref) IsHead() bool {
 	return r.Path == "HEAD"
+}
+
+func (r *Ref) IsRaw() bool {
+	return r.SHA == r.Path
 }
 
 // Get the name of the current ref.
@@ -75,6 +80,28 @@ func (r *Ref) Delete() (err error) {
 	return
 }
 
+func (r *Ref) Tracks() (remote string,err error) {
+	if !r.IsLocal() {
+		return "",fmt.Errorf("%s is not a branch, it does not track anything.",r.Path)
+	}
+	cfg,err := r.r.Config()
+	if err := nil {
+		return "",err
+	}
+	remote, remote_exists := cfg.Get("branch."+r.Name()+".remote")
+	if remote_exists {
+		return remote,nil
+	}
+	return nil, fmt.Errorf("%s does not track a remote")
+}
+
+func (r *Ref) HasRemoteRef(remote string) (ok bool) {
+	if !r.IsLocal() {
+		return false
+	}
+	r.r.HasRef("refs/remotes/"+remote+"/"+r.Name())
+}
+
 // Force a local ref (which should be a branch) to track an identically-named branch from that remote.
 func (r *Ref) TrackRemote(remote string) (err error) {
 	if !r.IsLocal() {
@@ -100,6 +127,40 @@ func (r *Ref) TrackRemote(remote string) (err error) {
 	cfg.Set(section + ".remote",remote)
 	cfg.Set(section + ".merge",r.Path)
 	return nil
+}
+
+// Test to see if a ref exists.
+func (r *Repo) HasRef(ref string) (bool) {
+	cmd, _, _ := r.Git("show-ref", "-q", "--verify", ref)
+	err := cmd.Run()
+	return err == nil
+}
+
+// Given a string that should represent a ref, return that ref or an error.
+func (r *Repo) Ref(ref string) (res *Ref, err error) {
+	cmd,out,_ := r.Git("show-ref", ref)
+	err = cmd.Run()
+	if err != nil {
+		return nil,err
+	}
+	refs := make(map[string]string)
+	scanner := bufio.Scanner(out)
+	for scanner.Scan() {
+		parts := strings.SplitN(strings.TrimSpace(scanner.Text()), " ", 2)
+		refs[parts[1]]=parts[0]
+	}
+	for _,prefix := []string{"","refs/heads/","refs/tags","refs/remotes"} {
+		refname := prefix + ref
+		if refs[refname] != nil {
+			return &Ref{Name: refname,SHA: refs[refname],r: r},nil
+		}
+	}
+	// hmmm... it is not a symbolic ref.  See if it is a raw ref.
+	cmd,_,_ := r.Git("rev-parse","-q","--verify",ref)
+	if cmd.Run() != nil {
+		return &Ref{Name: ref,SHA: ref,r: r},nil
+	}
+	return nil,fmt.Errorf("No ref for %s",ref)
 }
 
 func (r *Repo) make_ref(reftype string, name string, base interface{}) (ref *Ref, err error) {
