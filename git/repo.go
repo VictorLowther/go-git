@@ -131,11 +131,13 @@ func Clone(source, target string, args ...string) (res *Repo, err error) {
 	return
 }
 
-type statLine struct {
+type StatLine struct {
 	indexStat, workStat, oldPath, newPath string
 }
 
-func (s *statLine) Print() string {
+type StatLines []*StatLine
+
+func (s *StatLine) Print() string {
 	var res string
 	if s.indexStat == "R" {
 		res = fmt.Sprintf("%s was renamed to %s\n", s.oldPath, s.newPath)
@@ -147,8 +149,8 @@ func (s *statLine) Print() string {
 	return res
 }
 
-func (r *Repo) mapStatus() (res []*statLine) {
-	var thisStat *statLine
+func (r *Repo) mapStatus() (res StatLines) {
+	var thisStat *StatLine
 	cmd, out, err := r.Git("status", "--porcelain", "-z")
 	if cmd.Run() != nil {
 		panic(err.String())
@@ -163,7 +165,7 @@ func (r *Repo) mapStatus() (res []*statLine) {
 			if thisStat != nil {
 				res = append(res, thisStat)
 			}
-			thisStat = new(statLine)
+			thisStat = new(StatLine)
 			thisStat.indexStat = parts[1]
 			thisStat.workStat = parts[2]
 			thisStat.oldPath = parts[3]
@@ -180,9 +182,9 @@ func (r *Repo) mapStatus() (res []*statLine) {
 	return
 }
 
-func (r *Repo) IsClean() (res bool, statLines []*statLine) {
-	statLines = r.mapStatus()
-	res = len(statLines) == 0
+func (r *Repo) IsClean() (res bool, lines StatLines) {
+	lines = r.mapStatus()
+	res = len(lines) == 0
 	return
 }
 
@@ -197,3 +199,9 @@ func (r *Repo) Path() (path string) {
 		return r.workDir
 	}
 }
+
+
+
+
+
+
