@@ -38,6 +38,7 @@ func (r *Repo) AddRemote(name,url string) (err error){
 	if err = cmd.Run(); err != nil {
 		return err
 	}
+	r.cfg = nil
 	return nil
 }
 
@@ -52,6 +53,7 @@ func (r *Repo) ZapRemote(name string) (err error){
 	if err = cmd.Run(); err != nil {
 		return err
 	}
+	r.cfg = nil
 	return nil
 }
 

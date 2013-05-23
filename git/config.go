@@ -38,6 +38,7 @@ func (r *Repo) Get(k string) (v string, f bool) {
 
 func (r *Repo) maybeKillSection(prefix string) {
 	if len(r.Find(prefix)) == 0 {
+		log.Printf("Will kill config section %s\n",prefix)
 		cmd, _, err := r.Git("config","--remove-section", prefix)
 		if cmd.Run() != nil {
 			log.Panic(err.String())
@@ -48,15 +49,15 @@ func (r *Repo) maybeKillSection(prefix string) {
 func (r *Repo) Unset(k string) {
 	r.read_config()
 	if _,e := r.Get(k); e == true {
-		delete(r.cfg,k)
 		cmd, _, err := r.Git("config", "--unset-all",k)
+		delete(r.cfg,k)
 		if cmd.Run() == nil {
 			parts := strings.Split(k,".")
 			switch len(parts) {
 			case 0:  panic("Cannot happen!")
 			case 1:  r.maybeKillSection(k)
 			case 2:  r.maybeKillSection(parts[0])
-			default: r.maybeKillSection(strings.Join(parts[0:len(parts)-2],"."))
+			default: r.maybeKillSection(strings.Join(parts[0:len(parts)-1],"."))
 			}
 		} else {
 			panic(err.String())
