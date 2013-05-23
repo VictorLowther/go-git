@@ -11,9 +11,12 @@ import (
 	"strings"
 )
 
+type ConfigMap map[string]string
+
 type Repo struct {
 	gitDir, workDir string
 	Refs            map[string]*Ref
+	cfg ConfigMap
 }
 
 var gitCmd string

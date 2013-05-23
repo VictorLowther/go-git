@@ -84,22 +84,18 @@ func (r *Ref) Tracks() (remote string,err error) {
 	if !r.IsLocal() {
 		return "",fmt.Errorf("%s is not a branch, it does not track anything.",r.Path)
 	}
-	cfg,err := r.r.Config()
-	if err := nil {
-		return "",err
-	}
-	remote, remote_exists := cfg.Get("branch."+r.Name()+".remote")
+	remote, remote_exists := r.r.Get("branch."+r.Name()+".remote")
 	if remote_exists {
 		return remote,nil
 	}
-	return nil, fmt.Errorf("%s does not track a remote")
+	return "", fmt.Errorf("%s does not track a remote")
 }
 
 func (r *Ref) HasRemoteRef(remote string) (ok bool) {
 	if !r.IsLocal() {
 		return false
 	}
-	r.r.HasRef("refs/remotes/"+remote+"/"+r.Name())
+	return r.r.HasRef("refs/remotes/"+remote+"/"+r.Name())
 }
 
 // Force a local ref (which should be a branch) to track an identically-named branch from that remote.
@@ -107,13 +103,9 @@ func (r *Ref) TrackRemote(remote string) (err error) {
 	if !r.IsLocal() {
 		return fmt.Errorf("%s is not a branch, we cannot track it.",r.Path)
 	}
-	cfg, err := r.r.Config()
-	if err != nil {
-		return err
-	}
 	section := "branch."+r.Name()
-	branch_remote, branch_remote_exists := cfg.Get(section + ".remote")
-	branch_merge, branch_merge_exists := cfg.Get(section + ".merge")
+	branch_remote, branch_remote_exists := r.r.Get(section + ".remote")
+	branch_merge, branch_merge_exists := r.r.Get(section + ".merge")
 	if branch_remote_exists &&
 		branch_merge_exists &&
 		branch_remote == remote &&
@@ -122,10 +114,10 @@ func (r *Ref) TrackRemote(remote string) (err error) {
 		return nil
 	}
 	if branch_remote_exists || branch_merge_exists {
-		cfg.maybeKillSection(section)
+		r.r.maybeKillSection(section)
 	}
-	cfg.Set(section + ".remote",remote)
-	cfg.Set(section + ".merge",r.Path)
+	r.r.Set(section + ".remote",remote)
+	r.r.Set(section + ".merge",r.Path)
 	return nil
 }
 
@@ -144,21 +136,21 @@ func (r *Repo) Ref(ref string) (res *Ref, err error) {
 		return nil,err
 	}
 	refs := make(map[string]string)
-	scanner := bufio.Scanner(out)
+	scanner := bufio.NewScanner(out)
 	for scanner.Scan() {
 		parts := strings.SplitN(strings.TrimSpace(scanner.Text()), " ", 2)
 		refs[parts[1]]=parts[0]
 	}
-	for _,prefix := []string{"","refs/heads/","refs/tags","refs/remotes"} {
+	for _,prefix := range []string{"","refs/heads/","refs/tags","refs/remotes"} {
 		refname := prefix + ref
-		if refs[refname] != nil {
-			return &Ref{Name: refname,SHA: refs[refname],r: r},nil
+		if refs[refname] != "" {
+			return &Ref{Path: refname,SHA: refs[refname],r: r},nil
 		}
 	}
 	// hmmm... it is not a symbolic ref.  See if it is a raw ref.
-	cmd,_,_ := r.Git("rev-parse","-q","--verify",ref)
+	cmd,_,_ = r.Git("rev-parse","-q","--verify",ref)
 	if cmd.Run() != nil {
-		return &Ref{Name: ref,SHA: ref,r: r},nil
+		return &Ref{Path: ref,SHA: ref,r: r},nil
 	}
 	return nil,fmt.Errorf("No ref for %s",ref)
 }

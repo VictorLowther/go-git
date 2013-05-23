@@ -12,17 +12,19 @@ type RemoteMap map[string]string
 // Get our list of remotes by parsing the git config.
 func (r *Repo) Remotes() RemoteMap {
 	res := make(RemoteMap)
-	conf,err := r.Config()
-	if err != nil {
-		return res
-	}
-	for k,v := range conf.cfg {
+	r.read_config()
+	for k,v := range r.cfg {
 		parts := strings.Split(k,".")
 		if parts[0] == "remote" && parts[2] == "url" {
 			res[parts[1]]=v
 		}
 	}
 	return res
+}
+
+func (r *Repo) HasRemote(remote string) (ok bool){
+	_,ok = r.Get("remote."+remote+".url")
+	return
 }
 
 // Add a new remote.
