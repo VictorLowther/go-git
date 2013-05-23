@@ -42,6 +42,21 @@ func (r *Repo) AddRemote(name,url string) (err error){
 	return nil
 }
 
+func (r *Repo) RenameRemote(old,nuevo string) (err error) {
+	if ! r.HasRemote(old) {
+		return fmt.Errorf("%s does not exist, cannot rename it!\n",old)
+	}
+	if r.HasRemote(nuevo) {
+		return fmt.Errorf("%s already exists!\n",nuevo)
+	}
+	cmd,_,_ := r.Git("remote","rename",old,nuevo)
+	if err = cmd.Run(); err != nil {
+		return err
+	}
+	r.cfg = nil
+	return nil
+}
+
 // Destroy an old remote mapping
 func (r *Repo) ZapRemote(name string) (err error){
 	remotes := r.Remotes()
