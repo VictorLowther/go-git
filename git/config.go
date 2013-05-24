@@ -38,7 +38,6 @@ func (r *Repo) Get(k string) (v string, f bool) {
 
 func (r *Repo) maybeKillSection(prefix string) {
 	if len(r.Find(prefix)) == 0 {
-		log.Printf("Will kill config section %s\n",prefix)
 		cmd, _, err := r.Git("config","--remove-section", prefix)
 		if cmd.Run() != nil {
 			log.Panic(err.String())
