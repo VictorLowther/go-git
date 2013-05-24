@@ -72,6 +72,19 @@ func (r *Repo) ZapRemote(name string) (err error){
 	return nil
 }
 
+func (r *Repo) SetRemoteURL(name,url string) (err error) {
+	remotes := r.Remotes()
+	if remotes[name] = "" {
+		return fmt.Errorf("%s does not have a remote named %s\n",r.Path(), name)
+	}
+	cmd,_, _ := r.Git("remote","set-url",name,url)
+	if err = cmd.Run(); err != nil {
+		return err
+	}
+	r.cfg = nil
+	return nil
+}
+
 // Helper type for holding the status of a fetch from a single remote.
 type FetchStatus struct {
 	Ok bool
