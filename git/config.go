@@ -30,6 +30,11 @@ func (r *Repo) read_config() {
 	return
 }
 
+// Lazily reload our config.
+func (r *Repo) ReloadConfig() {
+	r.cfg = nil
+}
+
 func (r *Repo) Get(k string) (v string, f bool) {
 	r.read_config()
 	v,f = r.cfg[k]
