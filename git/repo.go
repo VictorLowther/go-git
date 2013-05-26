@@ -14,7 +14,7 @@ import (
 type ConfigMap map[string]string
 
 type Repo struct {
-	gitDir, workDir string
+	GitDir, WorkDir string
 	Refs            map[string]*Ref
 	cfg ConfigMap
 }
@@ -80,8 +80,8 @@ func Open(path string) (repo *Repo, err error) {
 		found, gitdir, workdir := findRepo(path)
 		if found {
 			repo = new(Repo)
-			repo.gitDir = gitdir
-			repo.workDir = workdir
+			repo.GitDir = gitdir
+			repo.WorkDir = workdir
 			repo.Refs = repo.refs()
 			return
 		}
@@ -106,10 +106,10 @@ func Git(cmd string, args ...string) (res *exec.Cmd, stdout, stderr *bytes.Buffe
 
 func (r *Repo) Git(cmd string, args ...string) (res *exec.Cmd, out, err *bytes.Buffer) {
 	var path string
-	if r.workDir == "" {
-		path = r.gitDir
+	if r.WorkDir == "" {
+		path = r.GitDir
 	} else {
-		path = r.workDir
+		path = r.WorkDir
 	}
 	res, out, err = Git(cmd, args...)
 	res.Dir = path
@@ -192,14 +192,14 @@ func (r *Repo) IsClean() (res bool, lines StatLines) {
 }
 
 func (r *Repo) IsRaw() (res bool) {
-	return r.workDir == ""
+	return r.WorkDir == ""
 }
 
 func (r *Repo) Path() (path string) {
 	if r.IsRaw() {
-		return r.gitDir
+		return r.GitDir
 	} else {
-		return r.workDir
+		return r.WorkDir
 	}
 }
 
