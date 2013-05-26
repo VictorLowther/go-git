@@ -74,7 +74,7 @@ func (r *Repo) ZapRemote(name string) (err error){
 
 func (r *Repo) SetRemoteURL(name,url string) (err error) {
 	remotes := r.Remotes()
-	if remotes[name] = "" {
+	if remotes[name] == "" {
 		return fmt.Errorf("%s does not have a remote named %s\n",r.Path(), name)
 	}
 	cmd,_, _ := r.Git("remote","set-url",name,url)
