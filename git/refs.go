@@ -1,11 +1,11 @@
 package git
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
-	"strings"
 	"fmt"
-	"bufio"
+	"strings"
 )
 
 // Refs are the basic way to point at an individual commit in Git.
@@ -51,11 +51,11 @@ func (r *Ref) Name() (res string) {
 }
 
 func (r *Ref) Remote() (remote string, err error) {
-	if ! r.IsRemote() {
-		return "", fmt.Errorf("%s is not a remote ref!",r.Path)
+	if !r.IsRemote() {
+		return "", fmt.Errorf("%s is not a remote ref!", r.Path)
 	}
-	k := strings.SplitN(r.Path,"/",4)
-	return k[2],nil
+	k := strings.SplitN(r.Path, "/", 4)
+	return k[2], nil
 }
 
 // Delete a ref.
@@ -80,29 +80,29 @@ func (r *Ref) Delete() (err error) {
 	return
 }
 
-func (r *Ref) Tracks() (remote string,err error) {
+func (r *Ref) Tracks() (remote string, err error) {
 	if !r.IsLocal() {
-		return "",fmt.Errorf("%s is not a branch, it does not track anything.",r.Path)
+		return "", fmt.Errorf("%s is not a branch, it does not track anything.", r.Path)
 	}
-	remote, remote_exists := r.r.Get("branch."+r.Name()+".remote")
+	remote, remote_exists := r.r.Get("branch." + r.Name() + ".remote")
 	if remote_exists {
-		return remote,nil
+		return remote, nil
 	}
 	return "", fmt.Errorf("%s does not track a remote")
 }
 
 // Test to see if other is reachable in the commit
 // history leading up to this ref.
-	func (r *Ref) Contains(other *Ref) (bool, error) {
+func (r *Ref) Contains(other *Ref) (bool, error) {
 	// A ref ls always reachable from itself.
 	if r.SHA == other.SHA {
-		return true,nil
+		return true, nil
 	}
 	// If other's revision graph has revs that are not in our revision
 	// graph, then we do not contain other.
-	cmd,out,_ := r.r.Git("rev-list",other.SHA,fmt.Sprintf("^%s",r.SHA))
+	cmd, out, _ := r.r.Git("rev-list", other.SHA, fmt.Sprintf("^%s", r.SHA))
 	if err := cmd.Run(); err != nil {
-		return false,err
+		return false, err
 	}
 	// If there is no output, then all of other's revs are members of
 	// our revision graph, and we contain other.
@@ -113,15 +113,15 @@ func (r *Ref) HasRemoteRef(remote string) (ok bool) {
 	if !r.IsLocal() {
 		return false
 	}
-	return r.r.HasRef("refs/remotes/"+remote+"/"+r.Name())
+	return r.r.HasRef("refs/remotes/" + remote + "/" + r.Name())
 }
 
 // Force a local ref (which should be a branch) to track an identically-named branch from that remote.
 func (r *Ref) TrackRemote(remote string) (err error) {
 	if !r.IsLocal() {
-		return fmt.Errorf("%s is not a branch, we cannot track it.",r.Path)
+		return fmt.Errorf("%s is not a branch, we cannot track it.", r.Path)
 	}
-	section := "branch."+r.Name()
+	section := "branch." + r.Name()
 	branch_remote, branch_remote_exists := r.r.Get(section + ".remote")
 	branch_merge, branch_merge_exists := r.r.Get(section + ".merge")
 	if branch_remote_exists &&
@@ -134,13 +134,13 @@ func (r *Ref) TrackRemote(remote string) (err error) {
 	if branch_remote_exists || branch_merge_exists {
 		r.r.maybeKillSection(section)
 	}
-	r.r.Set(section + ".remote",remote)
-	r.r.Set(section + ".merge",r.Path)
+	r.r.Set(section+".remote", remote)
+	r.r.Set(section+".merge", r.Path)
 	return nil
 }
 
 // Test to see if a ref exists.
-func (r *Repo) HasRef(ref string) (bool) {
+func (r *Repo) HasRef(ref string) bool {
 	cmd, _, _ := r.Git("show-ref", "-q", "--verify", ref)
 	err := cmd.Run()
 	return err == nil
@@ -148,29 +148,29 @@ func (r *Repo) HasRef(ref string) (bool) {
 
 // Given a string that should represent a ref, return that ref or an error.
 func (r *Repo) Ref(ref string) (res *Ref, err error) {
-	cmd,out,_ := r.Git("show-ref", ref)
+	cmd, out, _ := r.Git("show-ref", ref)
 	err = cmd.Run()
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 	refs := make(map[string]string)
 	scanner := bufio.NewScanner(out)
 	for scanner.Scan() {
 		parts := strings.SplitN(strings.TrimSpace(scanner.Text()), " ", 2)
-		refs[parts[1]]=parts[0]
+		refs[parts[1]] = parts[0]
 	}
-	for _,prefix := range []string{"","refs/heads/","refs/tags","refs/remotes"} {
+	for _, prefix := range []string{"", "refs/heads/", "refs/tags", "refs/remotes"} {
 		refname := prefix + ref
 		if refs[refname] != "" {
-			return &Ref{Path: refname,SHA: refs[refname],r: r},nil
+			return &Ref{Path: refname, SHA: refs[refname], r: r}, nil
 		}
 	}
 	// hmmm... it is not a symbolic ref.  See if it is a raw ref.
-	cmd,_,_ = r.Git("rev-parse","-q","--verify",ref)
+	cmd, _, _ = r.Git("rev-parse", "-q", "--verify", ref)
 	if cmd.Run() != nil {
-		return &Ref{Path: ref,SHA: ref,r: r},nil
+		return &Ref{Path: ref, SHA: ref, r: r}, nil
 	}
-	return nil,fmt.Errorf("No ref for %s",ref)
+	return nil, fmt.Errorf("No ref for %s", ref)
 }
 
 func (r *Repo) make_ref(reftype string, name string, base interface{}) (ref *Ref, err error) {
