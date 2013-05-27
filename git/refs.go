@@ -90,6 +90,17 @@ func (r *Ref) Tracks() (remote string, err error) {
 	return "", fmt.Errorf("%s does not track a remote")
 }
 
+func (r *Ref) RemoteBranch(remote string) (res *Ref, err error) {
+	if !r.IsLocal() {
+		return nil,fmt.Errorf("%s is not a branch, cannot find remote tracking branch.\n",r.Path)
+	}
+	res,found := r.r.refs["refs/remotes/"+remote+"/"+r.Name()]
+	if !found {
+		return nil,fmt.Errorf("%s has no remote branch at %s\n",r.Path,remote)
+	}
+	return res,nil
+}
+
 // Test to see if other is reachable in the commit
 // history leading up to this ref.
 func (r *Ref) Contains(other *Ref) (bool, error) {
