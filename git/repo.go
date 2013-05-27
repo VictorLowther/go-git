@@ -13,9 +13,11 @@ import (
 
 type ConfigMap map[string]string
 
+type RefMap map[string]*Ref
+
 type Repo struct {
 	GitDir, WorkDir string
-	Refs            map[string]*Ref
+	refs            RefMap
 	cfg ConfigMap
 }
 
@@ -82,7 +84,7 @@ func Open(path string) (repo *Repo, err error) {
 			repo = new(Repo)
 			repo.GitDir = gitdir
 			repo.WorkDir = workdir
-			repo.Refs = repo.refs()
+			repo.refs = make(RefMap)
 			return
 		}
 		parent := filepath.Dir(path)

@@ -2,7 +2,6 @@ package git
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"strings"
@@ -75,7 +74,7 @@ func (r *Ref) Delete() (err error) {
 	cmd, _, _ := r.r.Git(c, "-d", r.Name())
 	err = cmd.Run()
 	if err == nil {
-		delete(r.r.Refs, r.Name())
+		delete(r.r.refs, r.Name())
 	}
 	return
 }
@@ -109,6 +108,13 @@ func (r *Ref) Contains(other *Ref) (bool, error) {
 	return (out.Len() == 0), nil
 }
 
+// Test to see if a ref exists.
+func (r *Repo) HasRef(ref string) bool {
+	r.load_refs()
+	_, err := r.refs[ref]
+	return err
+}
+
 func (r *Ref) HasRemoteRef(remote string) (ok bool) {
 	if !r.IsLocal() {
 		return false
@@ -139,34 +145,17 @@ func (r *Ref) TrackRemote(remote string) (err error) {
 	return nil
 }
 
-// Test to see if a ref exists.
-func (r *Repo) HasRef(ref string) bool {
-	cmd, _, _ := r.Git("show-ref", "-q", "--verify", ref)
-	err := cmd.Run()
-	return err == nil
-}
-
 // Given a string that should represent a ref, return that ref or an error.
 func (r *Repo) Ref(ref string) (res *Ref, err error) {
-	cmd, out, _ := r.Git("show-ref", ref)
-	err = cmd.Run()
-	if err != nil {
-		return nil, err
-	}
-	refs := make(map[string]string)
-	scanner := bufio.NewScanner(out)
-	for scanner.Scan() {
-		parts := strings.SplitN(strings.TrimSpace(scanner.Text()), " ", 2)
-		refs[parts[1]] = parts[0]
-	}
+	r.load_refs()
 	for _, prefix := range []string{"", "refs/heads/", "refs/tags", "refs/remotes"} {
 		refname := prefix + ref
-		if refs[refname] != "" {
-			return &Ref{Path: refname, SHA: refs[refname], r: r}, nil
+		if res = r.refs[refname]; res != nil {
+			return res, nil
 		}
 	}
 	// hmmm... it is not a symbolic ref.  See if it is a raw ref.
-	cmd, _, _ = r.Git("rev-parse", "-q", "--verify", ref)
+	cmd, _, _ := r.Git("rev-parse", "-q", "--verify", ref)
 	if cmd.Run() != nil {
 		return &Ref{Path: ref, SHA: ref, r: r}, nil
 	}
@@ -174,9 +163,10 @@ func (r *Repo) Ref(ref string) (res *Ref, err error) {
 }
 
 func (r *Repo) make_ref(reftype string, name string, base interface{}) (ref *Ref, err error) {
+	r.load_refs()
 	if name == "HEAD" {
 		return nil, errors.New("Cannot create a branch named HEAD.")
-	} else if r.Refs[name] != nil {
+	} else if r.refs[name] != nil {
 		return nil, errors.New(name + " already exists.")
 	} else {
 		if !(reftype == "branch" || reftype == "tag") {
@@ -196,8 +186,9 @@ func (r *Repo) make_ref(reftype string, name string, base interface{}) (ref *Ref
 			return nil, err
 		}
 	}
-	r.Refs = r.refs()
-	return r.Refs[name], nil
+	r.refs = nil
+	r.load_refs()
+	return r.refs[name], nil
 }
 
 // Create a branch
@@ -230,20 +221,35 @@ func (r *Repo) Checkout(ref string) (err error) {
 	return
 }
 
-func (r *Repo) refs() (res map[string]*Ref) {
-	res = make(map[string]*Ref)
+func (r *Repo) load_refs() {
+	if r.refs != nil {
+		return
+	}
+	res := make(map[string]*Ref)
 	cmd, out, err := r.Git("show-ref")
 	if cmd.Run() != nil {
 		panic(err.String())
 	}
-	for {
-		line, err := out.ReadBytes(10)
-		if err != nil {
-			break
-		}
-		parts := strings.SplitN(string(bytes.TrimSpace(line)), " ", 2)
+	scanner := bufio.NewScanner(out)
+	for scanner.Scan() {
+		parts := strings.SplitN(strings.TrimSpace(scanner.Text()), " ", 2)
 		ref := &Ref{parts[0], parts[1], r}
 		res[ref.Name()] = ref
 	}
-	return
+	r.refs = res
 }
+
+// Reload all the refs lazily.
+func (r *Repo) ReloadRefs() {
+	r.refs = nil
+}
+
+
+
+
+
+
+
+
+
+
