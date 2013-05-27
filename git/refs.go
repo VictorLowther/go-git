@@ -91,6 +91,24 @@ func (r *Ref) Tracks() (remote string,err error) {
 	return "", fmt.Errorf("%s does not track a remote")
 }
 
+// Test to see if other is reachable in the commit
+// history leading up to this ref.
+	func (r *Ref) Contains(other *Ref) (bool, error) {
+	// A ref ls always reachable from itself.
+	if r.SHA == other.SHA {
+		return true,nil
+	}
+	// If other's revision graph has revs that are not in our revision
+	// graph, then we do not contain other.
+	cmd,out,_ := r.r.Git("rev-list",other.SHA,fmt.Sprintf("^%s",r.SHA))
+	if err := cmd.Run(); err != nil {
+		return false,err
+	}
+	// If there is no output, then all of other's revs are members of
+	// our revision graph, and we contain other.
+	return (out.Len() == 0), nil
+}
+
 func (r *Ref) HasRemoteRef(remote string) (ok bool) {
 	if !r.IsLocal() {
 		return false
