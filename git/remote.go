@@ -1,9 +1,9 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"strings"
-	"errors"
 )
 
 // Type to hold our map of remote names -> remote specifiers.
@@ -13,28 +13,29 @@ type RemoteMap map[string]string
 func (r *Repo) Remotes() RemoteMap {
 	res := make(RemoteMap)
 	r.read_config()
-	for k,v := range r.cfg {
-		parts := strings.Split(k,".")
+	for k, v := range r.cfg {
+		parts := strings.Split(k, ".")
 		if parts[0] == "remote" && parts[2] == "url" {
-			res[parts[1]]=v
+			res[parts[1]] = v
 		}
 	}
 	return res
 }
 
-func (r *Repo) HasRemote(remote string) (ok bool){
-	_,ok = r.Get("remote."+remote+".url")
+// Test to see if this repository has a specific remote by url.
+func (r *Repo) HasRemote(remote string) (ok bool) {
+	_, ok = r.Get("remote." + remote + ".url")
 	return
 }
 
 // Add a new remote.
-func (r *Repo) AddRemote(name,url string) (err error){
+func (r *Repo) AddRemote(name, url string) (err error) {
 	remotes := r.Remotes()
 	if remotes[name] != "" {
-		msg := fmt.Sprintf("%s already has a remote named %s",r.Path(),name)
+		msg := fmt.Sprintf("%s already has a remote named %s", r.Path(), name)
 		return errors.New(msg)
 	}
-	cmd, _, _ := r.Git("remote","add",name,url)
+	cmd, _, _ := r.Git("remote", "add", name, url)
 	if err = cmd.Run(); err != nil {
 		return err
 	}
@@ -42,14 +43,15 @@ func (r *Repo) AddRemote(name,url string) (err error){
 	return nil
 }
 
-func (r *Repo) RenameRemote(old,nuevo string) (err error) {
-	if ! r.HasRemote(old) {
-		return fmt.Errorf("%s does not exist, cannot rename it!\n",old)
+// Rename a remote, while preserving any trackin information it may have.
+func (r *Repo) RenameRemote(old, nuevo string) (err error) {
+	if !r.HasRemote(old) {
+		return fmt.Errorf("%s does not exist, cannot rename it!\n", old)
 	}
 	if r.HasRemote(nuevo) {
-		return fmt.Errorf("%s already exists!\n",nuevo)
+		return fmt.Errorf("%s already exists!\n", nuevo)
 	}
-	cmd,_,_ := r.Git("remote","rename",old,nuevo)
+	cmd, _, _ := r.Git("remote", "rename", old, nuevo)
 	if err = cmd.Run(); err != nil {
 		return err
 	}
@@ -58,13 +60,13 @@ func (r *Repo) RenameRemote(old,nuevo string) (err error) {
 }
 
 // Destroy an old remote mapping
-func (r *Repo) ZapRemote(name string) (err error){
+func (r *Repo) ZapRemote(name string) (err error) {
 	remotes := r.Remotes()
 	if remotes[name] == "" {
-		msg := fmt.Sprintf("%s does not have a remote named %s",r.Path(),name)
+		msg := fmt.Sprintf("%s does not have a remote named %s", r.Path(), name)
 		return errors.New(msg)
 	}
-	cmd, _, _ := r.Git("remote","rm",name)
+	cmd, _, _ := r.Git("remote", "rm", name)
 	if err = cmd.Run(); err != nil {
 		return err
 	}
@@ -72,43 +74,64 @@ func (r *Repo) ZapRemote(name string) (err error){
 	return nil
 }
 
-func (r *Repo) SetRemoteURL(name,url string) (err error) {
+// Set a new URL for a remote.
+func (r *Repo) SetRemoteURL(name, url string) (err error) {
 	remotes := r.Remotes()
 	if remotes[name] == "" {
-		return fmt.Errorf("%s does not have a remote named %s\n",r.Path(), name)
+		return fmt.Errorf("%s does not have a remote named %s\n", r.Path(), name)
 	}
-	cmd,_, _ := r.Git("remote","set-url",name,url)
+	cmd, _, _ := r.Git("remote", "set-url", name, url)
 	if err = cmd.Run(); err != nil {
 		return err
 	}
 	r.cfg = nil
 	return nil
+}
+
+// Probe a URL to see if there is a git repository there.
+func (r *Repo) ProbeURL(url string) (found bool, err error) {
+	cmd, _, _ := r.Git("ls-remote", url, "refs/heads/master")
+	err = cmd.Run()
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// Prune remotes that do not point at an actual git repository.
+func (r *Repo) PruneRemotes() {
+	for remote, url := range r.Remotes() {
+		found, _ := r.ProbeURL(url)
+		if !found {
+			r.ZapRemote(remote)
+		}
+	}
 }
 
 // Helper type for holding the status of a fetch from a single remote.
 type FetchStatus struct {
-	Ok bool
+	Ok     bool
 	Remote string
 }
 
 // Fetch updates from a single remote.
 func (r *Repo) fetchOne(remote string, ok chan FetchStatus) {
-	cmd, _, _ := r.Git("fetch","-q","-t",remote)
+	cmd, _, _ := r.Git("fetch", "-q", "-t", remote)
 	err := cmd.Run()
 	ok <- FetchStatus{
-		Ok: (err == nil),
+		Ok:     (err == nil),
 		Remote: remote,
 	}
 	return
 }
 
 // Helper to enable empty slice -> all remotes the repo knows about.
-func (r *Repo) allRemotes(remotes []string) ([]string){
+func (r *Repo) allRemotes(remotes []string) []string {
 	if len(remotes) > 0 {
 		return remotes
 	}
-	for k,_ := range r.Remotes() {
-		remotes = append(remotes,k)
+	for k, _ := range r.Remotes() {
+		remotes = append(remotes, k)
 	}
 	return remotes
 }
@@ -117,8 +140,8 @@ func (r *Repo) allRemotes(remotes []string) ([]string){
 // This expects to be called as a goroutine.
 func (r *Repo) AsyncFetch(remotes []string, ok chan FetchStatus) {
 	remotes = r.allRemotes(remotes)
-	for _,v := range remotes {
-		go r.fetchOne(v,ok)
+	for _, v := range remotes {
+		go r.fetchOne(v, ok)
 	}
 }
 
@@ -131,15 +154,15 @@ func (r *Repo) Fetch(remotes []string) (res bool, items FetchMap) {
 	items = make(FetchMap)
 	res = true
 	remotes = r.allRemotes(remotes)
-	go r.AsyncFetch(remotes,ok)
+	go r.AsyncFetch(remotes, ok)
 	for {
-		token := <- ok
-		items[token.Remote]=token.Ok
+		token := <-ok
+		items[token.Remote] = token.Ok
 		res = res && token.Ok
 		if len(items) == len(remotes) {
 			break
 		}
 	}
 	close(ok)
-	return res,items
+	return res, items
 }
