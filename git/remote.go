@@ -99,13 +99,17 @@ func (r *Repo) ProbeURL(url string) (found bool, err error) {
 }
 
 // Prune remotes that do not point at an actual git repository.
-func (r *Repo) PruneRemotes() {
+func (r *Repo) PruneRemotes() (res map[string]bool) {
+	res = make(map[string]bool)
 	for remote, url := range r.Remotes() {
 		found, _ := r.ProbeURL(url)
-		if !found {
-			r.ZapRemote(remote)
+		if !found && r.ZapRemote(remote) == nil {
+			res[remote] = true
+		} else {
+			res[remote] = false
 		}
 	}
+	return res
 }
 
 // Helper type for holding the status of a fetch from a single remote.
