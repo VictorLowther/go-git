@@ -2,9 +2,14 @@ package git
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"path/filepath"
 	"strings"
+	"os"
+	"os/exec"
 )
 
 // Refs are the basic way to point at an individual commit in Git.
@@ -39,6 +44,8 @@ func (r *Ref) IsHead() bool {
 	return r.Path == "HEAD"
 }
 
+// Test to see if this is a raw ref.  Raw refs refer directly to a
+// SHA1, and have that is its path.
 func (r *Ref) IsRaw() bool {
 	return r.SHA == r.Path
 }
@@ -49,6 +56,8 @@ func (r *Ref) Name() (res string) {
 	return k[(len(k) - 1)]
 }
 
+// If this is a remote ref, return the remote that the ref tracks.
+// Otherwise, return an error.
 func (r *Ref) Remote() (remote string, err error) {
 	if !r.IsRemote() {
 		return "", fmt.Errorf("%s is not a remote ref!", r.Path)
@@ -79,6 +88,7 @@ func (r *Ref) Delete() (err error) {
 	return
 }
 
+// Return the remote that this ref is configred to track, if any.
 func (r *Ref) Tracks() (remote string, err error) {
 	if !r.IsLocal() {
 		return "", fmt.Errorf("%s is not a branch, it does not track anything.", r.Path)
@@ -90,15 +100,42 @@ func (r *Ref) Tracks() (remote string, err error) {
 	return "", fmt.Errorf("%s does not track a remote")
 }
 
+// Return the remote ref corresponding to this branch for a
+// specific remote, if any.
 func (r *Ref) RemoteBranch(remote string) (res *Ref, err error) {
 	if !r.IsLocal() {
-		return nil,fmt.Errorf("%s is not a branch, cannot find remote tracking branch.\n",r.Path)
+		return nil, fmt.Errorf("%s is not a branch, cannot find remote tracking branch.\n", r.Path)
 	}
-	res,found := r.r.refs["refs/remotes/"+remote+"/"+r.Name()]
+	res, found := r.r.refs["refs/remotes/"+remote+"/"+r.Name()]
 	if !found {
-		return nil,fmt.Errorf("%s has no remote branch at %s\n",r.Path,remote)
+		return nil, fmt.Errorf("%s has no remote branch at %s\n", r.Path, remote)
 	}
-	return res,nil
+	return res, nil
+}
+
+// Return the remote ref that this ref tracks, if any.
+func (r *Ref) TrackedRef() (res *Ref, err error) {
+	remote, err := r.Tracks()
+	if err != nil {
+		return nil,err
+	}
+	res, err = r.RemoteBranch(remote)
+	return res,err
+}
+
+// Reload the SHA for this ref.
+func (r *Ref) Reload() (err error) {
+	if r.IsHead() || r.IsRaw() {
+		return nil
+	}
+	ref_path := filepath.Join(r.r.GitDir, r.Path)
+	sha, err := ioutil.ReadFile(ref_path)
+	if err != nil {
+		return err
+	}
+	buf := bytes.NewBuffer(sha)
+	r.SHA = strings.TrimSpace(buf.String())
+	return nil
 }
 
 // Test to see if other is reachable in the commit
@@ -117,6 +154,77 @@ func (r *Ref) Contains(other *Ref) (bool, error) {
 	// If there is no output, then all of other's revs are members of
 	// our revision graph, and we contain other.
 	return (out.Len() == 0), nil
+}
+
+func merge_rebase_wrapper(op string, head, target *Ref, doer *exec.Cmd, undoer func() (error)) (err error) {
+	// if r contains target, no need to do anything.
+	ok,err := head.Contains(target)
+	if err != nil {
+		return err
+	}
+	if ok {
+		return nil
+	}
+	if !head.IsLocal() {
+		return fmt.Errorf("%s is not a branch, cannot %s it!\n",op, head.Path)
+	}
+	current,err := head.r.CurrentRef()
+	if err != nil {
+		return err
+	}
+	if !head.Equals(current) {
+		if err = head.Checkout(); err != nil {
+			return err
+		}
+		defer current.Checkout()
+	}
+	if doer.Run() == nil {
+		head.Reload()
+		return nil
+	}
+	return undoer()
+}
+
+// Rebase a ref onto target.  If the rebase succeeds, the function will
+// return a nil error. If the rebase fails for any reason, it will be
+// aborted and the error output of the rebase will be return as an error.
+func (r *Ref) RebaseOnto(target *Ref) (err error) {
+	cmd, out, err_out := r.r.Git("rebase", "-q", target.SHA, r.Name())
+	undoer := func () (err error) {
+		// The rebase failed.  Unwind it, by force if needed.
+		err = fmt.Errorf("%s\n%s\n", out.String(), err_out.String())
+		cmd, _, _ := r.r.Git("rebase", "--abort")
+		if cmd.Run() == nil {
+			// We unwound successfully.
+			return err
+		}
+		// We could not abort the rebase.
+		// Force it.
+		cmd, _, _ = r.r.Git("branch", "-f", r.Name(), r.SHA)
+		cmd.Run()
+		os.Remove(filepath.Join(r.r.GitDir, ".rebase-apply"))
+		return err
+	}
+	return merge_rebase_wrapper("rebase",r,target,cmd,undoer)
+}
+
+func (r *Ref) MergeWith(target *Ref) (err error) {
+	cmd, out, err_out := r.r.Git("merge", "-q", target.SHA, r.Name())
+	undoer := func () (err error) {
+		// The merge failed.  Unwind it, by force if needed.
+		err = fmt.Errorf("%s\n%s\n", out.String(), err_out.String())
+		cmd, _, _ := r.r.Git("merge", "--abort")
+		if cmd.Run() == nil {
+			// We unwound successfully.
+			return err
+		}
+		// We could not abort the merge.
+		// Force it.
+		cmd, _, _ = r.r.Git("branch", "-f", r.Name(), r.SHA)
+		cmd.Run()
+		return err
+	}
+	return merge_rebase_wrapper("merge", r, target, cmd, undoer)
 }
 
 // Test to see if a ref exists.
@@ -232,6 +340,31 @@ func (r *Repo) Checkout(ref string) (err error) {
 	return
 }
 
+func (r *Repo) CurrentRef() (current *Ref, err error) {
+	cmd,out,_ := r.Git("symbolic-ref","HEAD")
+	err = cmd.Run()
+	if err == nil {
+		// If we did not get an error, then out has the symbolic ref
+		// of the branch we are on.
+		refname := strings.TrimSpace(out.String())
+		return r.refs[refname],nil
+	}
+	// Otherwise, we need to rev-parse HEAD to get what we are currently on.
+	cmd,out,_ = r.Git("rev-parse","HEAD")
+	err = cmd.Run()
+	if err != nil {
+		// Something Bad has happened.
+		return nil,err
+	}
+	refname := strings.TrimSpace(out.String())
+	// Make a raw ref our of this.
+	return &Ref{Path: refname, SHA: refname, r: r},nil
+}
+
+func (r *Ref) Equals(other *Ref) bool {
+	return r.Path == other.Path && r.SHA == other.SHA && r.r == other.r
+}
+
 func (r *Repo) load_refs() {
 	if r.refs != nil {
 		return
@@ -254,13 +387,3 @@ func (r *Repo) load_refs() {
 func (r *Repo) ReloadRefs() {
 	r.refs = nil
 }
-
-
-
-
-
-
-
-
-
-
