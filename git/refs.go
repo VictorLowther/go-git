@@ -18,6 +18,8 @@ type Ref struct {
 	r         *Repo
 }
 
+type RefSlice []*Ref
+
 // Test to see if this ref points a a local ref.
 // Only local refs are mutable.
 func (r *Ref) IsLocal() bool {
@@ -54,6 +56,18 @@ func (r *Ref) IsRaw() bool {
 func (r *Ref) Name() (res string) {
 	k := strings.SplitN(r.Path, "/", 3)
 	return k[(len(k) - 1)]
+}
+
+func (r *Repo) Branches(res RefSlice) {
+	r.load_refs()
+	res = make(RefSlice,0,10)
+	for _,ref := range r.refs {
+		if ref.IsLocal() {
+			res = append(res,ref)
+		}
+	}
+	return
+	
 }
 
 // If this is a remote ref, return the remote that the ref tracks.
