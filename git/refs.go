@@ -58,7 +58,7 @@ func (r *Ref) Name() (res string) {
 	return k[(len(k) - 1)]
 }
 
-func (r *Repo) Branches(res RefSlice) {
+func (r *Repo) Branches() (res RefSlice) {
 	r.load_refs()
 	res = make(RefSlice,0,10)
 	for _,ref := range r.refs {
