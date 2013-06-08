@@ -66,7 +66,7 @@ func (r *Repo) Branches() (res RefSlice) {
 			res = append(res,ref)
 		}
 	}
-	return
+	return res
 	
 }
 
@@ -120,7 +120,8 @@ func (r *Ref) RemoteBranch(remote string) (res *Ref, err error) {
 	if !r.IsLocal() {
 		return nil, fmt.Errorf("%s is not a branch, cannot find remote tracking branch.\n", r.Path)
 	}
-	res, found := r.r.refs["refs/remotes/"+remote+"/"+r.Name()]
+	remote_name := "refs/remotes/"+remote+"/"+r.Name()
+	res, found := r.r.refs[remote_name]
 	if !found {
 		return nil, fmt.Errorf("%s has no remote branch at %s\n", r.Path, remote)
 	}
@@ -170,6 +171,32 @@ func (r *Ref) Contains(other *Ref) (bool, error) {
 	return (out.Len() == 0), nil
 }
 
+
+func (r *Repo) CurrentRef() (current *Ref, err error) {
+	r.load_refs()
+	cmd,out,_ := r.Git("symbolic-ref","HEAD")
+	err = cmd.Run()
+	if err == nil {
+		// If we did not get an error, then out has the symbolic ref
+		// of the branch we are on.
+		refname := strings.TrimSpace(out.String())
+		return r.refs[refname],nil
+	}
+	// Otherwise, we need to rev-parse HEAD to get what we are currently on.
+	cmd,out,_ = r.Git("rev-parse","HEAD")
+	if err = cmd.Run(); err != nil {
+		// Something Bad has happened.
+		return nil,err
+	}
+	refname := strings.TrimSpace(out.String())
+	// Make a raw ref our of this.
+	return &Ref{Path: refname, SHA: refname, r: r},nil
+}
+
+func (r *Ref) Equals(other *Ref) bool {
+	return r.Path == other.Path && r.SHA == other.SHA && r.r == other.r
+}
+
 func merge_rebase_wrapper(op string, head, target *Ref, doer *exec.Cmd, undoer func() (error)) (err error) {
 	// if r contains target, no need to do anything.
 	ok,err := head.Contains(target)
@@ -181,7 +208,7 @@ func merge_rebase_wrapper(op string, head, target *Ref, doer *exec.Cmd, undoer f
 	}
 	if !head.IsLocal() {
 		return fmt.Errorf("%s is not a branch, cannot %s it!\n",op, head.Path)
-	}
+ 	}
 	current,err := head.r.CurrentRef()
 	if err != nil {
 		return err
@@ -281,7 +308,7 @@ func (r *Ref) TrackRemote(remote string) (err error) {
 // Given a string that should represent a ref, return that ref or an error.
 func (r *Repo) Ref(ref string) (res *Ref, err error) {
 	r.load_refs()
-	for _, prefix := range []string{"", "refs/heads/", "refs/tags", "refs/remotes"} {
+	for _, prefix := range []string{"", "refs/heads/", "refs/tags/", "refs/remotes/"} {
 		refname := prefix + ref
 		if res = r.refs[refname]; res != nil {
 			return res, nil
@@ -295,16 +322,19 @@ func (r *Repo) Ref(ref string) (res *Ref, err error) {
 	return nil, fmt.Errorf("No ref for %s", ref)
 }
 
-func (r *Repo) make_ref(reftype string, name string, base interface{}) (ref *Ref, err error) {
+func (r *Repo) make_ref(reftype, name string, base interface{}) (ref *Ref, err error) {
 	r.load_refs()
+	var path string
+	switch reftype {
+	case "branch": path = "refs/heads/" + name
+	case "tag": path = "refs/tags/" + name
+	default: return nil, fmt.Errorf("Cannot create a new %s",reftype)
+	}
 	if name == "HEAD" {
 		return nil, errors.New("Cannot create a branch named HEAD.")
-	} else if r.refs[name] != nil {
+	} else if r.refs[path] != nil {
 		return nil, errors.New(name + " already exists.")
 	} else {
-		if !(reftype == "branch" || reftype == "tag") {
-			return nil, errors.New("Unknown ref type!")
-		}
 		switch i := base.(type) {
 		case *Ref:
 			cmd, _, _ := r.Git(reftype, name, i.Name())
@@ -313,7 +343,7 @@ func (r *Repo) make_ref(reftype string, name string, base interface{}) (ref *Ref
 			cmd, _, _ := r.Git(reftype, name, i)
 			err = cmd.Run()
 		default:
-			return nil, errors.New("Unknown type for base!")
+			return nil, fmt.Errorf("Unknown type %v for base",i)
 		}
 		if err != nil {
 			return nil, err
@@ -321,7 +351,7 @@ func (r *Repo) make_ref(reftype string, name string, base interface{}) (ref *Ref
 	}
 	r.refs = nil
 	r.load_refs()
-	return r.refs[name], nil
+	return r.refs[path], nil
 }
 
 // Create a branch
@@ -354,31 +384,6 @@ func (r *Repo) Checkout(ref string) (err error) {
 	return
 }
 
-func (r *Repo) CurrentRef() (current *Ref, err error) {
-	cmd,out,_ := r.Git("symbolic-ref","HEAD")
-	err = cmd.Run()
-	if err == nil {
-		// If we did not get an error, then out has the symbolic ref
-		// of the branch we are on.
-		refname := strings.TrimSpace(out.String())
-		return r.refs[refname],nil
-	}
-	// Otherwise, we need to rev-parse HEAD to get what we are currently on.
-	cmd,out,_ = r.Git("rev-parse","HEAD")
-	err = cmd.Run()
-	if err != nil {
-		// Something Bad has happened.
-		return nil,err
-	}
-	refname := strings.TrimSpace(out.String())
-	// Make a raw ref our of this.
-	return &Ref{Path: refname, SHA: refname, r: r},nil
-}
-
-func (r *Ref) Equals(other *Ref) bool {
-	return r.Path == other.Path && r.SHA == other.SHA && r.r == other.r
-}
-
 func (r *Repo) load_refs() {
 	if r.refs != nil {
 		return
@@ -392,7 +397,7 @@ func (r *Repo) load_refs() {
 	for scanner.Scan() {
 		parts := strings.SplitN(strings.TrimSpace(scanner.Text()), " ", 2)
 		ref := &Ref{parts[0], parts[1], r}
-		res[ref.Name()] = ref
+		res[ref.Path] = ref
 	}
 	r.refs = res
 }
