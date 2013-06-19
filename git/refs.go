@@ -67,7 +67,16 @@ func (r *Repo) Branches() (res RefSlice) {
 		}
 	}
 	return res
-	
+}
+
+func (r *Ref) Branch(name string) (ref *Ref, err error) {
+	ref,err = r.r.make_ref("branch",name,r)
+	return
+}
+
+func (r *Ref) Tag(name string) (ref *Ref, err error) {
+	ref,err = r.r.make_ref("tag",name,r)
+	return
 }
 
 // If this is a remote ref, return the remote that the ref tracks.
