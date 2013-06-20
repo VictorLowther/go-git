@@ -325,7 +325,7 @@ func (r *Repo) Ref(ref string) (res *Ref, err error) {
 	}
 	// hmmm... it is not a symbolic ref.  See if it is a raw ref.
 	cmd, _, _ := r.Git("rev-parse", "-q", "--verify", ref)
-	if cmd.Run() != nil {
+	if cmd.Run() == nil {
 		return &Ref{Path: ref, SHA: ref, r: r}, nil
 	}
 	return nil, fmt.Errorf("No ref for %s", ref)
