@@ -35,6 +35,7 @@ func (r *Repo) ReloadConfig() {
 	r.cfg = nil
 }
 
+// Get a specific config value.
 func (r *Repo) Get(k string) (v string, f bool) {
 	r.read_config()
 	v,f = r.cfg[k]
@@ -50,6 +51,7 @@ func (r *Repo) maybeKillSection(prefix string) {
 	}
 }
 
+// Unset a config variable.
 func (r *Repo) Unset(k string) {
 	r.read_config()
 	if _,e := r.Get(k); e == true {
@@ -69,6 +71,7 @@ func (r *Repo) Unset(k string) {
 	}
 }
 
+// Set a config variable.
 func (r *Repo) Set(k,v string) {
 	r.Unset(k)
 	cmd, _, _ := r.Git("config","--add", k,v)
@@ -78,6 +81,7 @@ func (r *Repo) Set(k,v string) {
 	r.cfg[k]=v
 }
 
+// Find all config variables with a specific prefix.
 func (r *Repo) Find(prefix string) (res map[string]string) {
 	r.read_config()
 	res = make(map[string]string)

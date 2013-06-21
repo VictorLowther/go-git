@@ -58,6 +58,7 @@ func (r *Ref) Name() (res string) {
 	return k[(len(k) - 1)]
 }
 
+// Get all the local branches in the repository
 func (r *Repo) Branches() (res RefSlice) {
 	r.load_refs()
 	res = make(RefSlice,0,10)
@@ -69,11 +70,13 @@ func (r *Repo) Branches() (res RefSlice) {
 	return res
 }
 
+// Create a new branch starting at this ref.
 func (r *Ref) Branch(name string) (ref *Ref, err error) {
 	ref,err = r.r.make_ref("branch",name,r)
 	return
 }
 
+// Create a new tag at the current ref.
 func (r *Ref) Tag(name string) (ref *Ref, err error) {
 	ref,err = r.r.make_ref("tag",name,r)
 	return
@@ -180,7 +183,7 @@ func (r *Ref) Contains(other *Ref) (bool, error) {
 	return (out.Len() == 0), nil
 }
 
-
+// Get the ref that HEAD is pointing at.
 func (r *Repo) CurrentRef() (current *Ref, err error) {
 	r.load_refs()
 	cmd,out,_ := r.Git("symbolic-ref","HEAD")
@@ -202,6 +205,7 @@ func (r *Repo) CurrentRef() (current *Ref, err error) {
 	return &Ref{Path: refname, SHA: refname, r: r},nil
 }
 
+// Check to see if this ref is the same as another ref.
 func (r *Ref) Equals(other *Ref) bool {
 	return r.Path == other.Path && r.SHA == other.SHA && r.r == other.r
 }
@@ -258,6 +262,9 @@ func (r *Ref) RebaseOnto(target *Ref) (err error) {
 	return merge_rebase_wrapper("rebase",r,target,cmd,undoer)
 }
 
+// Merge this ref into the target. If the merge succeeds, this method
+// will return nil, otherwise the merge will be aborted and the error
+// output of the merge will be returned as an error.
 func (r *Ref) MergeWith(target *Ref) (err error) {
 	cmd, out, err_out := r.r.Git("merge", "-q", target.SHA, r.Name())
 	undoer := func () (err error) {
@@ -284,6 +291,7 @@ func (r *Repo) HasRef(ref string) bool {
 	return err
 }
 
+// Check to see if this branch has a matching branch at a given remote.
 func (r *Ref) HasRemoteRef(remote string) (ok bool) {
 	if !r.IsLocal() {
 		return false
@@ -375,6 +383,7 @@ func (r *Repo) Tag(name string, base interface{}) (ref *Ref, err error) {
 	return
 }
 
+// Check out this ref.
 func (r *Ref) Checkout() (err error) {
 	var ref string
 	if r.IsLocal() || r.IsTag() {
@@ -387,6 +396,46 @@ func (r *Ref) Checkout() (err error) {
 	return
 }
 
+// Cherry will return an array of Refs that correspond to
+// unique changes from base to r
+func (r *Ref) Cherry(base *Ref) (refs []*Ref, err error) {
+	cmd,out,_ := r.r.Git("cherry",base.SHA, r.SHA)
+	if err = cmd.Run(); err != nil {
+		return nil,err
+	}
+	refs = make([]*Ref,0,10)
+	scanner := bufio.NewScanner(out)
+	for scanner.Scan() {
+		parts := strings.SplitN(strings.TrimSpace(scanner.Text())," ",2)
+		if parts[0] == "+" {
+			sha := strings.TrimSpace(parts[1])
+			refs = append(refs,&Ref{Path:sha, SHA:sha, r:r.r})
+		}
+	}
+	return refs,nil
+}
+
+// CherryLog will return an array of strings that contain the output from
+// git log --cherry-pick --right-only --no-merges --oneline base.SHA...r.SHA
+func (r *Ref) CherryLog(base *Ref) (log []string, err error) {
+	cmd,out,_ := r.r.Git("log",
+		"--cherry-pick",
+		"--right-only",
+		"--no-merges",
+		"--oneline",
+		base.SHA+"..."+r.SHA)
+	if err = cmd.Run(); err != nil {
+		return nil,err
+	}
+	log = make([]string,0,10)
+	scanner := bufio.NewScanner(out)
+	for scanner.Scan() {
+		log = append(log,scanner.Text())
+	}
+	return log,nil
+}
+
+// Check out a ref by name.
 func (r *Repo) Checkout(ref string) (err error) {
 	cmd, _, _ := r.Git("checkout", "-q", ref)
 	err = cmd.Run()
