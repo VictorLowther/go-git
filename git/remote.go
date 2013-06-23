@@ -102,7 +102,7 @@ func ProbeURL(url string) (found bool, err error) {
 func (r *Repo) PruneRemotes() (res map[string]bool) {
 	res = make(map[string]bool)
 	for remote, url := range r.Remotes() {
-		found, _ := r.ProbeURL(url)
+		found, _ := ProbeURL(url)
 		if !found && r.ZapRemote(remote) == nil {
 			res[remote] = true
 		} else {
