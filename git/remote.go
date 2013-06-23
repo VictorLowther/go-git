@@ -89,8 +89,8 @@ func (r *Repo) SetRemoteURL(name, url string) (err error) {
 }
 
 // Probe a URL to see if there is a git repository there.
-func (r *Repo) ProbeURL(url string) (found bool, err error) {
-	cmd, _, _ := r.Git("ls-remote", url, "refs/heads/master")
+func ProbeURL(url string) (found bool, err error) {
+	cmd, _, _ := Git("ls-remote", url, "refs/heads/master")
 	err = cmd.Run()
 	if err != nil {
 		return false, err
