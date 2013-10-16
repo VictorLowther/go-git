@@ -322,6 +322,25 @@ func (r *Ref) TrackRemote(remote string) (err error) {
 	return nil
 }
 
+// Is equivalent to git ls-tree fullpath, then get cat-file the SHA we get back.
+func (r *Ref) Cat(fullpath string) (out io.Reader, err error) {
+	cmd,lsout,_ := r.r.Git("ls-tree","--full-tree",fullpath)
+	err = cmd.Run()
+	if err != nil {
+		return nil,err
+	}
+	if lsout.Len() == 0 {
+		return nil,fmt.Errorf("%s is not present in %s",fullpath,r.r.Path())
+	}
+	parts := strings.Split(lsout.String()," ")
+	if parts[1] != "blob" {
+		return nil,fmt.Errorf("%s is not a file in %s",fullpath,r.r.Path())
+	}
+	shaname := strings.Split(parts[2],"\t")
+	cmd,out := r.r.Git("cat-file","blob",shaname)
+	return out,cmd.Run()
+}
+
 // Given a string that should represent a ref, return that ref or an error.
 func (r *Repo) Ref(ref string) (res *Ref, err error) {
 	r.load_refs()
