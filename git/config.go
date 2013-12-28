@@ -5,7 +5,7 @@ import (
 	"log"
 )
 
-func (r *Repo) read_config() {
+func (r *Repo) readConfig() {
 	if r.cfg != nil {
 		return
 	}
@@ -30,14 +30,14 @@ func (r *Repo) read_config() {
 	return
 }
 
-// Lazily reload our config.
+// ReloadConfig will force the config for this git repo to be lazily reloaded.
 func (r *Repo) ReloadConfig() {
 	r.cfg = nil
 }
 
 // Get a specific config value.
 func (r *Repo) Get(key string) (val string, found bool) {
-	r.read_config()
+	r.readConfig()
 	val,found = r.cfg[key]
 	return
 }
@@ -53,7 +53,7 @@ func (r *Repo) maybeKillSection(prefix string) {
 
 // Unset a config variable.
 func (r *Repo) Unset(key string) {
-	r.read_config()
+	r.readConfig()
 	if _,e := r.Get(key); e == true {
 		cmd, _, err := r.Git("config", "--unset-all",key)
 		delete(r.cfg,key)
@@ -83,7 +83,7 @@ func (r *Repo) Set(key,val string) {
 
 // Find all config variables with a specific prefix.
 func (r *Repo) Find(prefix string) (res map[string]string) {
-	r.read_config()
+	r.readConfig()
 	res = make(map[string]string)
 	for k,v := range r.cfg {
 		if strings.HasPrefix(k,prefix) {

@@ -7,83 +7,89 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"path/filepath"
-	"strings"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 )
 
-// Refs are the basic way to point at an individual commit in Git.
+// Ref is the basic way to point at an individual commit in Git.
 type Ref struct {
 	SHA, Path string
 	r         *Repo
 }
 
+// RefSlice is a slice of pointers to Ref
 type RefSlice []*Ref
 
-// Test to see if this ref points a a local ref.
-// Only local refs are mutable.
+// IsLocal tests to see if this is a local ref, a.k.a a branch.
 func (r *Ref) IsLocal() bool {
 	return strings.HasPrefix(r.Path, "refs/heads/")
 }
 
-// Test to see if this ref points at a remote ref.
+// IsBranch is an alias for IsLocal.
+func (r *Ref) IsBranch() bool {
+	return r.IsLocal()
+}
+
+// IsRemote tests to see if this is a remote ref.
 // Remote refs are not locally mutable except as a result of a fetch or
 // push operation.
 func (r *Ref) IsRemote() bool {
 	return strings.HasPrefix(r.Path, "refs/remotes/")
 }
 
-// Test to see if this ref points at a tag.
-// Tags are immutable once changed.
+// IsTag tests to see if this ref is a tag.
+// Tags are immutable once created.
 func (r *Ref) IsTag() bool {
 	return strings.HasPrefix(r.Path, "refs/tags/")
 }
 
-// Test to see if this points at the HEAD ref.
+// IsHead tess to see if this is the HEAD ref.
 // HEAD is a special pointer that either points at another ref
 // or points directly at a commit.
 func (r *Ref) IsHead() bool {
 	return r.Path == "HEAD"
 }
 
-// Test to see if this is a raw ref.  Raw refs refer directly to a
-// SHA1, and have that is its path.
+// IsRaw tests to see if this is a raw ref.
+// Raw refs refer directly to a SHA1, and have that is its path.
 func (r *Ref) IsRaw() bool {
 	return r.SHA == r.Path
 }
 
-// Get the name of the current ref.
+// Name gets the name of the current ref.
+// The name is the Path with refs/<whatever>/ stripped off it.
 func (r *Ref) Name() (res string) {
 	k := strings.SplitN(r.Path, "/", 3)
 	return k[(len(k) - 1)]
 }
 
-// Get all the local branches in the repository
+// Branches gets all the local branches in the repository
 func (r *Repo) Branches() (res RefSlice) {
-	r.load_refs()
-	res = make(RefSlice,0,10)
-	for _,ref := range r.refs {
-		if ref.IsLocal() {
-			res = append(res,ref)
+	r.loadRefs()
+	res = make(RefSlice, 0, 10)
+	for _, ref := range r.refs {
+		if ref.IsBranch() {
+			res = append(res, ref)
 		}
 	}
 	return res
 }
 
-// Create a new branch starting at this ref.
+// Branch creates a new branch starting at this ref.
 func (r *Ref) Branch(name string) (ref *Ref, err error) {
-	ref,err = r.r.make_ref("branch",name,r)
+	ref, err = r.r.makeRef("branch", name, r)
 	return
 }
 
-// Create a new tag at the current ref.
+// Tag creates a new tag at this ref.
 func (r *Ref) Tag(name string) (ref *Ref, err error) {
-	ref,err = r.r.make_ref("tag",name,r)
+	ref, err = r.r.makeRef("tag", name, r)
 	return
 }
 
-// If this is a remote ref, return the remote that the ref tracks.
+// Remote returns the remote this ref tracks, if this is a remote ref.
 // Otherwise, return an error.
 func (r *Ref) Remote() (remote string, err error) {
 	if !r.IsRemote() {
@@ -93,7 +99,8 @@ func (r *Ref) Remote() (remote string, err error) {
 	return k[2], nil
 }
 
-// Delete a ref.
+// Delete deletes a ref, if it is deletable.
+// Only branches and tags are deletable.
 func (r *Ref) Delete() (err error) {
 	var c string
 	if r.IsRemote() {
@@ -102,7 +109,7 @@ func (r *Ref) Delete() (err error) {
 		return errors.New("Cannot delete HEAD!")
 	} else if r.IsTag() {
 		c = "tag"
-	} else if r.IsLocal() {
+	} else if r.IsBranch() {
 		c = "branch"
 	} else {
 		panic("Cannot happen!")
@@ -115,49 +122,52 @@ func (r *Ref) Delete() (err error) {
 	return
 }
 
-// Return the remote that this ref is configred to track, if any.
+// Tracks returns the remote that this ref is configred to track, if any.
+// If this ref does not track anything, then an error is returned.
 func (r *Ref) Tracks() (remote string, err error) {
 	if !r.IsLocal() {
 		return "", fmt.Errorf("%s is not a branch, it does not track anything.", r.Path)
 	}
-	remote, remote_exists := r.r.Get("branch." + r.Name() + ".remote")
-	if remote_exists {
+	remote, remoteExists := r.r.Get("branch." + r.Name() + ".remote")
+	if remoteExists {
 		return remote, nil
 	}
 	return "", fmt.Errorf("%s does not track a remote")
 }
 
-// Return the remote ref corresponding to this branch for a
-// specific remote, if any.
+// RemoteBranch returns the remote ref corresponding to this branch for a
+// specific remote, if any.  It returns an error if there is no remote tracking branch for
+// this ref.
 func (r *Ref) RemoteBranch(remote string) (res *Ref, err error) {
 	if !r.IsLocal() {
 		return nil, fmt.Errorf("%s is not a branch, cannot find remote tracking branch.\n", r.Path)
 	}
-	remote_name := "refs/remotes/"+remote+"/"+r.Name()
-	res, found := r.r.refs[remote_name]
+	remoteName := "refs/remotes/" + remote + "/" + r.Name()
+	res, found := r.r.refs[remoteName]
 	if !found {
 		return nil, fmt.Errorf("%s has no remote branch at %s\n", r.Path, remote)
 	}
 	return res, nil
 }
 
-// Return the remote ref that this ref tracks, if any.
+// TrackedRef returns  the remote ref that this ref tracks, if any.
 func (r *Ref) TrackedRef() (res *Ref, err error) {
 	remote, err := r.Tracks()
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 	res, err = r.RemoteBranch(remote)
-	return res,err
+	return res, err
 }
 
-// Reload the SHA for this ref.
+// Reload the SHA for this ref.  This should be called if you suspect that
+// the SHA has changed outside the context of this library.
 func (r *Ref) Reload() (err error) {
 	if r.IsHead() || r.IsRaw() {
 		return nil
 	}
-	ref_path := filepath.Join(r.r.GitDir, r.Path)
-	sha, err := ioutil.ReadFile(ref_path)
+	refPath := filepath.Join(r.r.GitDir, r.Path)
+	sha, err := ioutil.ReadFile(refPath)
 	if err != nil {
 		return err
 	}
@@ -166,7 +176,7 @@ func (r *Ref) Reload() (err error) {
 	return nil
 }
 
-// Test to see if other is reachable in the commit
+// Contains tests to see if other is reachable in the commit
 // history leading up to this ref.
 func (r *Ref) Contains(other *Ref) (bool, error) {
 	// A ref ls always reachable from itself.
@@ -184,36 +194,40 @@ func (r *Ref) Contains(other *Ref) (bool, error) {
 	return (out.Len() == 0), nil
 }
 
-// Get the ref that HEAD is pointing at.
+// CurrentRef gets the ref that HEAD is pointing at.
+// It handles cases where HEAD is pointing at a symbolic ref
+// (a branch, tag, or remote ref), and where HEAD is pointing at a
+// raw SHA1.
 func (r *Repo) CurrentRef() (current *Ref, err error) {
-	r.load_refs()
-	cmd,out,_ := r.Git("symbolic-ref","HEAD")
+	r.loadRefs()
+	cmd, out, _ := r.Git("symbolic-ref", "HEAD")
 	err = cmd.Run()
 	if err == nil {
 		// If we did not get an error, then out has the symbolic ref
 		// of the branch we are on.
 		refname := strings.TrimSpace(out.String())
-		return r.refs[refname],nil
+		return r.refs[refname], nil
 	}
 	// Otherwise, we need to rev-parse HEAD to get what we are currently on.
-	cmd,out,_ = r.Git("rev-parse","HEAD")
+	cmd, out, _ = r.Git("rev-parse", "HEAD")
 	if err = cmd.Run(); err != nil {
 		// Something Bad has happened.
-		return nil,err
+		return nil, err
 	}
 	refname := strings.TrimSpace(out.String())
 	// Make a raw ref our of this.
-	return &Ref{Path: refname, SHA: refname, r: r},nil
+	return &Ref{Path: refname, SHA: refname, r: r}, nil
 }
 
-// Check to see if this ref is the same as another ref.
+// Equals checks to see if this ref is the same as another ref.
+// Refs are equal if they have the same path and the same SHA.
 func (r *Ref) Equals(other *Ref) bool {
 	return r.Path == other.Path && r.SHA == other.SHA && r.r == other.r
 }
 
-func merge_rebase_wrapper(op string, head, target *Ref, doer *exec.Cmd, undoer func() (error)) (err error) {
+func mergeRebaseWrapper(op string, head, target *Ref, doer *exec.Cmd, undoer func() error) (err error) {
 	// if r contains target, no need to do anything.
-	ok,err := head.Contains(target)
+	ok, err := head.Contains(target)
 	if err != nil {
 		return err
 	}
@@ -221,9 +235,9 @@ func merge_rebase_wrapper(op string, head, target *Ref, doer *exec.Cmd, undoer f
 		return nil
 	}
 	if !head.IsLocal() {
-		return fmt.Errorf("%s is not a branch, cannot %s it!\n",op, head.Path)
+		return fmt.Errorf("%s is not a branch, cannot %s it!\n", op, head.Path)
 	}
-	current,err := head.r.CurrentRef()
+	current, err := head.r.CurrentRef()
 	if err != nil {
 		return err
 	}
@@ -240,14 +254,15 @@ func merge_rebase_wrapper(op string, head, target *Ref, doer *exec.Cmd, undoer f
 	return undoer()
 }
 
-// Rebase a ref onto target.  If the rebase succeeds, the function will
-// return a nil error. If the rebase fails for any reason, it will be
-// aborted and the error output of the rebase will be return as an error.
+// RebaseOnto rebases a ref onto target.
+// If the rebase succeeds, the function will return a nil error.
+// If the rebase fails for any reason, the rebase will be aborted and the
+// error output of the rebase will be return as an error.
 func (r *Ref) RebaseOnto(target *Ref) (err error) {
-	cmd, out, err_out := r.r.Git("rebase", "-q", target.SHA, r.Name())
-	undoer := func () (err error) {
+	cmd, out, errOut := r.r.Git("rebase", "-q", target.SHA, r.Name())
+	undoer := func() (err error) {
 		// The rebase failed.  Unwind it, by force if needed.
-		err = fmt.Errorf("%s\n%s\n", out.String(), err_out.String())
+		err = fmt.Errorf("%s\n%s\n", out.String(), errOut.String())
 		cmd, _, _ := r.r.Git("rebase", "--abort")
 		if cmd.Run() == nil {
 			// We unwound successfully.
@@ -260,17 +275,17 @@ func (r *Ref) RebaseOnto(target *Ref) (err error) {
 		os.Remove(filepath.Join(r.r.GitDir, ".rebase-apply"))
 		return err
 	}
-	return merge_rebase_wrapper("rebase",r,target,cmd,undoer)
+	return mergeRebaseWrapper("rebase", r, target, cmd, undoer)
 }
 
-// Merge this ref into the target. If the merge succeeds, this method
-// will return nil, otherwise the merge will be aborted and the error
-// output of the merge will be returned as an error.
+// MergeWith merges this ref into the target.
+// If the merge succeeds, this method will return nil.
+// Otherwise the merge will be aborted and the error output of the merge will be returned as an error.
 func (r *Ref) MergeWith(target *Ref) (err error) {
-	cmd, out, err_out := r.r.Git("merge", "-q", target.SHA, r.Name())
-	undoer := func () (err error) {
+	cmd, out, errOut := r.r.Git("merge", "-q", target.SHA, r.Name())
+	undoer := func() (err error) {
 		// The merge failed.  Unwind it, by force if needed.
-		err = fmt.Errorf("%s\n%s\n", out.String(), err_out.String())
+		err = fmt.Errorf("%s\n%s\n", out.String(), errOut.String())
 		cmd, _, _ := r.r.Git("merge", "--abort")
 		if cmd.Run() == nil {
 			// We unwound successfully.
@@ -282,17 +297,18 @@ func (r *Ref) MergeWith(target *Ref) (err error) {
 		cmd.Run()
 		return err
 	}
-	return merge_rebase_wrapper("merge", r, target, cmd, undoer)
+	return mergeRebaseWrapper("merge", r, target, cmd, undoer)
 }
 
-// Test to see if a ref exists.
+// HasRef tests to see if a ref exists.
+// It must be passed a full ref name beginning with "refs/"
 func (r *Repo) HasRef(ref string) bool {
-	r.load_refs()
+	r.loadRefs()
 	_, err := r.refs[ref]
 	return err
 }
 
-// Check to see if this branch has a matching branch at a given remote.
+// HasRemoteRef checks to see if this branch has a matching branch at a given remote.
 func (r *Ref) HasRemoteRef(remote string) (ok bool) {
 	if !r.IsLocal() {
 		return false
@@ -300,22 +316,24 @@ func (r *Ref) HasRemoteRef(remote string) (ok bool) {
 	return r.r.HasRef("refs/remotes/" + remote + "/" + r.Name())
 }
 
-// Force a local ref (which should be a branch) to track an identically-named branch from that remote.
+// TrackRemote forces a local ref (which should be a branch)
+// to track an identically-named branch from that remote.
+// An error will be returned if we cannot set the tracking information.
 func (r *Ref) TrackRemote(remote string) (err error) {
 	if !r.IsLocal() {
 		return fmt.Errorf("%s is not a branch, we cannot track it.", r.Path)
 	}
 	section := "branch." + r.Name()
-	branch_remote, branch_remote_exists := r.r.Get(section + ".remote")
-	branch_merge, branch_merge_exists := r.r.Get(section + ".merge")
-	if branch_remote_exists &&
-		branch_merge_exists &&
-		branch_remote == remote &&
-		branch_merge == r.Path {
+	branchRemote, branchRemoteExists := r.r.Get(section + ".remote")
+	branchMerge, branchMergeExists := r.r.Get(section + ".merge")
+	if branchRemoteExists &&
+		branchMergeExists &&
+		branchRemote == remote &&
+		branchMerge == r.Path {
 		// We already have the right config.  Nothing to do.
 		return nil
 	}
-	if branch_remote_exists || branch_merge_exists {
+	if branchRemoteExists || branchMergeExists {
 		r.r.maybeKillSection(section)
 	}
 	r.r.Set(section+".remote", remote)
@@ -323,49 +341,58 @@ func (r *Ref) TrackRemote(remote string) (err error) {
 	return nil
 }
 
-// Is equivalent to git ls-tree fullpath, then get cat-file the SHA we get back.
+// Cat returns a Reader that will contain the contents of the
+// file at fullpath in this ref, if it exists.
+// Otherwise, it will return an error.
 func (r *Ref) Cat(fullpath string) (out io.Reader, err error) {
-	cmd,lsout,_ := r.r.Git("ls-tree","--full-tree",fullpath)
+	cmd, lsout, _ := r.r.Git("ls-tree", "--full-tree", fullpath)
 	err = cmd.Run()
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 	if lsout.Len() == 0 {
-		return nil,fmt.Errorf("%s is not present in %s",fullpath,r.r.Path())
+		return nil, fmt.Errorf("%s is not present in %s", fullpath, r.r.Path())
 	}
-	parts := strings.Split(lsout.String()," ")
+	parts := strings.Split(lsout.String(), " ")
 	if parts[1] != "blob" {
-		return nil,fmt.Errorf("%s is not a file in %s",fullpath,r.r.Path())
+		return nil, fmt.Errorf("%s is not a file in %s", fullpath, r.r.Path())
 	}
-	shaname := strings.Split(parts[2],"\t")
-	cmd,out,_ = r.r.Git("cat-file","blob",shaname[0])
-	return out,cmd.Run()
+	shaname := strings.Split(parts[2], "\t")
+	cmd, out, _ = r.r.Git("cat-file", "blob", shaname[0])
+	return out, cmd.Run()
 }
 
-// Given a string that should represent a ref, return that ref or an error.
-func (r *Repo) Ref(ref string) (res *Ref, err error) {
-	r.load_refs()
+// Ref returns a ref for the passed name, or an error.
+// It can take:
+//   raw names prefixed with "refs/",
+//   branch names, tags, remote tracking branches,
+//   and raw SHA1s.
+func (r *Repo) Ref(name string) (res *Ref, err error) {
+	r.loadRefs()
 	for _, prefix := range []string{"", "refs/heads/", "refs/tags/", "refs/remotes/"} {
-		refname := prefix + ref
+		refname := prefix + name
 		if res = r.refs[refname]; res != nil {
 			return res, nil
 		}
 	}
 	// hmmm... it is not a symbolic ref.  See if it is a raw ref.
-	cmd, _, _ := r.Git("rev-parse", "-q", "--verify", ref)
+	cmd, _, _ := r.Git("rev-parse", "-q", "--verify", name)
 	if cmd.Run() == nil {
-		return &Ref{Path: ref, SHA: ref, r: r}, nil
+		return &Ref{Path: name, SHA: name, r: r}, nil
 	}
-	return nil, fmt.Errorf("No ref for %s", ref)
+	return nil, fmt.Errorf("No ref for %s", name)
 }
 
-func (r *Repo) make_ref(reftype, name string, base interface{}) (ref *Ref, err error) {
-	r.load_refs()
+func (r *Repo) makeRef(reftype, name string, base interface{}) (ref *Ref, err error) {
+	r.loadRefs()
 	var path string
 	switch reftype {
-	case "branch": path = "refs/heads/" + name
-	case "tag": path = "refs/tags/" + name
-	default: return nil, fmt.Errorf("Cannot create a new %s",reftype)
+	case "branch":
+		path = "refs/heads/" + name
+	case "tag":
+		path = "refs/tags/" + name
+	default:
+		return nil, fmt.Errorf("Cannot create a new %s", reftype)
 	}
 	if name == "HEAD" {
 		return nil, errors.New("Cannot create a branch named HEAD.")
@@ -380,33 +407,35 @@ func (r *Repo) make_ref(reftype, name string, base interface{}) (ref *Ref, err e
 			cmd, _, _ := r.Git(reftype, name, i)
 			err = cmd.Run()
 		default:
-			return nil, fmt.Errorf("Unknown type %v for base",i)
+			return nil, fmt.Errorf("Unknown type %v for base", i)
 		}
 		if err != nil {
 			return nil, err
 		}
 	}
 	r.refs = nil
-	r.load_refs()
+	r.loadRefs()
 	return r.refs[path], nil
 }
 
-// Create a branch
+// Branch creates a branch with the given name based on whatever is passed for base.
+// base can be either a Ref type of the name of a ref, in which case it must actually exist.
 func (r *Repo) Branch(name string, base interface{}) (ref *Ref, err error) {
-	ref, err = r.make_ref("branch", name, base)
+	ref, err = r.makeRef("branch", name, base)
 	return
 }
 
-// Create a tag
+// Tag creates a tag with the given name based on whatever is passed for base.
+// base can be either a Ref type of the name of a ref, in which case it must actually exist.
 func (r *Repo) Tag(name string, base interface{}) (ref *Ref, err error) {
-	ref, err = r.make_ref("tag", name, base)
+	ref, err = r.makeRef("tag", name, base)
 	return
 }
 
-// Check out this ref.
+// Checkout checks this ref out.
 func (r *Ref) Checkout() (err error) {
 	var ref string
-	if r.IsLocal() || r.IsTag() {
+	if r.IsLocal() || r.IsTag() || r.IsRemote() {
 		ref = r.Name()
 	} else {
 		ref = r.SHA
@@ -419,54 +448,54 @@ func (r *Ref) Checkout() (err error) {
 // Cherry will return an array of Refs that correspond to
 // unique changes from base to r
 func (r *Ref) Cherry(base *Ref) (refs []*Ref, err error) {
-	cmd,out,_ := r.r.Git("cherry",base.SHA, r.SHA)
+	cmd, out, _ := r.r.Git("cherry", base.SHA, r.SHA)
 	if err = cmd.Run(); err != nil {
-		return nil,err
+		return nil, err
 	}
-	refs = make([]*Ref,0,10)
+	refs = make([]*Ref, 0, 10)
 	scanner := bufio.NewScanner(out)
 	for scanner.Scan() {
-		parts := strings.SplitN(strings.TrimSpace(scanner.Text())," ",2)
+		parts := strings.SplitN(strings.TrimSpace(scanner.Text()), " ", 2)
 		if parts[0] == "+" {
 			sha := strings.TrimSpace(parts[1])
-			refs = append(refs,&Ref{Path:sha, SHA:sha, r:r.r})
+			refs = append(refs, &Ref{Path: sha, SHA: sha, r: r.r})
 		}
 	}
-	return refs,nil
+	return refs, nil
 }
 
 // CherryLog will return an array of strings that contain the output from
 // git log --cherry-pick --right-only --no-merges --oneline base.SHA...r.SHA
 func (r *Ref) CherryLog(base *Ref) (log []string, err error) {
-	cmd,out,_ := r.r.Git("log",
+	cmd, out, _ := r.r.Git("log",
 		"--cherry-pick",
 		"--right-only",
 		"--no-merges",
 		"--oneline",
 		base.SHA+"..."+r.SHA)
 	if err = cmd.Run(); err != nil {
-		return nil,err
+		return nil, err
 	}
-	log = make([]string,0,10)
+	log = make([]string, 0, 10)
 	scanner := bufio.NewScanner(out)
 	for scanner.Scan() {
-		log = append(log,scanner.Text())
+		log = append(log, scanner.Text())
 	}
-	return log,nil
+	return log, nil
 }
 
-// Check out a ref by name.
+// Checkout checks out a ref by name.
 func (r *Repo) Checkout(ref string) (err error) {
 	cmd, _, _ := r.Git("checkout", "-q", ref)
 	err = cmd.Run()
 	return
 }
 
-func (r *Repo) load_refs() {
+func (r *Repo) loadRefs() {
 	if r.refs != nil {
 		return
 	}
-	res := make(map[string]*Ref)
+	res := make(RefMap)
 	cmd, out, err := r.Git("show-ref")
 	if cmd.Run() != nil {
 		panic(err.String())
@@ -480,16 +509,17 @@ func (r *Repo) load_refs() {
 	r.refs = res
 }
 
+// Refs returns a slice of all the refs
 func (r *Repo) Refs() (res RefSlice) {
 	r.ReloadRefs()
-	res = make(RefSlice,0,10)
-	for _,v := range r.refs {
-		res = append(res,v)
+	res = make(RefSlice, 0, 10)
+	for _, v := range r.refs {
+		res = append(res, v)
 	}
 	return res
 }
 
-// Reload all the refs lazily.
+// ReloadRefs will load all the refs lazily.
 func (r *Repo) ReloadRefs() {
 	r.refs = nil
 }

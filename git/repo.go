@@ -1,3 +1,7 @@
+// Package git wraps the git commandline tools.
+// It extracts several common tasks that I need to perform when managing the
+// horde of repositories that make up Crowbar, but can be used and extended
+// to do other tasks.
 package git
 
 import (
@@ -11,16 +15,21 @@ import (
 	"strings"
 )
 
-// Map config keys to their values.
+// ConfigMap maps config keys to their values.
 type ConfigMap map[string]string
 
-// Map refs to ref types.
+// RefMap maps ref names into Ref structs.
 type RefMap map[string]*Ref
 
-// Tracking struct to reference a git repository.
+// Repo is the main struct that we use to track Git repositories.
 type Repo struct {
-	GitDir, WorkDir string
-	refs            RefMap
+	// GitDir is the directory that the Git metadata is in for this repo.
+	GitDir string
+	// WorkDir is the directory that holds the working tree for this repo.
+	WorkDir string
+	// refs holds the cached RefMap.
+	refs RefMap
+	// cfg holds the cached config data.
 	cfg ConfigMap
 }
 
@@ -102,16 +111,16 @@ func Open(path string) (repo *Repo, err error) {
 // Git is a helper for creating exec.Cmd types and arranging to capture
 // the output and erro streams of the command into bytes.Buffers
 func Git(cmd string, args ...string) (res *exec.Cmd, stdout, stderr *bytes.Buffer) {
-	cmd_args := make([]string, 1)
-	cmd_args[0] = cmd
-	cmd_args = append(cmd_args, args...)
-	res = exec.Command(gitCmd, cmd_args...)
+	cmdArgs := make([]string, 1)
+	cmdArgs[0] = cmd
+	cmdArgs = append(cmdArgs, args...)
+	res = exec.Command(gitCmd, cmdArgs...)
 	stdout, stderr = new(bytes.Buffer), new(bytes.Buffer)
 	res.Stdout, res.Stderr = stdout, stderr
 	return
 }
 
-// Helper for making sure that the Git command runs in the proper repository.
+// Git is a helper for making sure that the Git command runs in the proper repository.
 func (r *Repo) Git(cmd string, args ...string) (res *exec.Cmd, out, err *bytes.Buffer) {
 	var path string
 	if r.WorkDir == "" {
@@ -124,7 +133,8 @@ func (r *Repo) Git(cmd string, args ...string) (res *exec.Cmd, out, err *bytes.B
 	return
 }
 
-// Initialize a new Git repository at the passed path.
+// Init initializes new Get metadata at the passed path.
+// The rest of the args are passed to the 'git init' command unchanged.
 func Init(path string, args ...string) (res *Repo, err error) {
 	cmd, _, stderr := Git("init", append(args, path)...)
 	if err = cmd.Run(); err != nil {
@@ -145,15 +155,15 @@ func Clone(source, target string, args ...string) (res *Repo, err error) {
 	return
 }
 
-// Struct for holding interesting bits of git status output.
+// StatLine holds interesting bits of git status output.
 type StatLine struct {
 	indexStat, workStat, oldPath, newPath string
 }
 
-// A slice of statuses.
+// StatLines is a slice of statuses.
 type StatLines []*StatLine
 
-// Helper for printing out a given StatLine in a human readable format.
+// Print prints a StatLine in human readable format.
 func (s *StatLine) Print() string {
 	var res string
 	if s.indexStat == "R" {
@@ -199,25 +209,24 @@ func (r *Repo) mapStatus() (res StatLines) {
 	return
 }
 
-// Check to see if there are any uncomitted or untracked changes.
+// IsClean checks to see if there are any uncomitted or untracked changes.
 func (r *Repo) IsClean() (res bool, lines StatLines) {
 	lines = r.mapStatus()
 	res = len(lines) == 0
 	return
 }
 
-// Check to see if this is a raw repository.
+// IsRaw checks to see if this is a raw repository.
 func (r *Repo) IsRaw() (res bool) {
 	return r.WorkDir == ""
 }
 
-// Return the best idea of the path to the repository.
+// Path returns the best idea of the path to the repository.
 // The exact value returned depends on whether this is a
 // raw repository or not.
 func (r *Repo) Path() (path string) {
 	if r.IsRaw() {
 		return r.GitDir
-	} else {
-		return r.WorkDir
 	}
+	return r.WorkDir
 }

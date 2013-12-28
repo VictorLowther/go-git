@@ -6,13 +6,13 @@ import (
 	"strings"
 )
 
-// Type to hold our map of remote names -> remote specifiers.
+// RemoteMap holds our map of remote names -> remote specifiers.
 type RemoteMap map[string]string
 
-// Get our list of remotes by parsing the git config.
+// Remotes gets our list of remotes by parsing the git config.
 func (r *Repo) Remotes() RemoteMap {
 	res := make(RemoteMap)
-	r.read_config()
+	r.readConfig()
 	for k, v := range r.cfg {
 		parts := strings.Split(k, ".")
 		if parts[0] == "remote" && parts[2] == "url" {
@@ -22,13 +22,13 @@ func (r *Repo) Remotes() RemoteMap {
 	return res
 }
 
-// Test to see if this repository has a specific remote by url.
+// HasRemote tests to see if this repository has a specific remote by url.
 func (r *Repo) HasRemote(remote string) (ok bool) {
 	_, ok = r.Get("remote." + remote + ".url")
 	return
 }
 
-// Add a new remote.
+// AddRemote adds a new remote.
 func (r *Repo) AddRemote(name, url string) (err error) {
 	remotes := r.Remotes()
 	if remotes[name] != "" {
@@ -43,7 +43,7 @@ func (r *Repo) AddRemote(name, url string) (err error) {
 	return nil
 }
 
-// Rename a remote, while preserving any trackin information it may have.
+// RenameRemote renames a remote, while preserving any tracking information it may have.
 func (r *Repo) RenameRemote(old, nuevo string) (err error) {
 	if !r.HasRemote(old) {
 		return fmt.Errorf("%s does not exist, cannot rename it!\n", old)
@@ -59,7 +59,7 @@ func (r *Repo) RenameRemote(old, nuevo string) (err error) {
 	return nil
 }
 
-// Destroy an old remote mapping
+// ZapRemote destroys a remote.
 func (r *Repo) ZapRemote(name string) (err error) {
 	remotes := r.Remotes()
 	if remotes[name] == "" {
@@ -74,7 +74,7 @@ func (r *Repo) ZapRemote(name string) (err error) {
 	return nil
 }
 
-// Set a new URL for a remote.
+// SetRemoteURL sets a new URL for a remote.
 func (r *Repo) SetRemoteURL(name, url string) (err error) {
 	remotes := r.Remotes()
 	if remotes[name] == "" {
@@ -88,7 +88,8 @@ func (r *Repo) SetRemoteURL(name, url string) (err error) {
 	return nil
 }
 
-// Probe a URL to see if there is a git repository there.
+// ProbeURL probes a URL to see if there is a git repository there.
+// We assume that there is a ref named 'refs/heads/master' in the remote.
 func ProbeURL(url string) (found bool, err error) {
 	cmd, _, _ := Git("ls-remote", url, "refs/heads/master")
 	err = cmd.Run()
@@ -98,7 +99,7 @@ func ProbeURL(url string) (found bool, err error) {
 	return true, nil
 }
 
-// Prune remotes that do not point at an actual git repository.
+// PruneRemotes prunes remotes that do not point at an actual git repository.
 func (r *Repo) PruneRemotes() (res map[string]bool) {
 	res = make(map[string]bool)
 	for remote, url := range r.Remotes() {
@@ -112,7 +113,7 @@ func (r *Repo) PruneRemotes() (res map[string]bool) {
 	return res
 }
 
-// Helper type for holding the status of a fetch from a single remote.
+// FetchStatus holds the status of a fetch from a single remote.
 type FetchStatus struct {
 	Ok     bool
 	Remote string
@@ -134,13 +135,13 @@ func (r *Repo) allRemotes(remotes []string) []string {
 	if len(remotes) > 0 {
 		return remotes
 	}
-	for k, _ := range r.Remotes() {
+	for k := range r.Remotes() {
 		remotes = append(remotes, k)
 	}
 	return remotes
 }
 
-// Fetch updates from the passed remotes.
+// AsyncFetch fetches updates from the passed remotes.
 // This expects to be called as a goroutine.
 func (r *Repo) AsyncFetch(remotes []string, ok chan FetchStatus) {
 	remotes = r.allRemotes(remotes)
@@ -149,7 +150,7 @@ func (r *Repo) AsyncFetch(remotes []string, ok chan FetchStatus) {
 	}
 }
 
-// Type that holds our map of remote names -> whether we fetched all updates from the remote.
+// FetchMap holds our map of remote names -> whether we fetched all updates from the remote.
 type FetchMap map[string]bool
 
 // Fetch all updates from our remotes in parallel.
