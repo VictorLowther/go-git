@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"path/filepath"
 	"strings"
@@ -221,7 +222,7 @@ func merge_rebase_wrapper(op string, head, target *Ref, doer *exec.Cmd, undoer f
 	}
 	if !head.IsLocal() {
 		return fmt.Errorf("%s is not a branch, cannot %s it!\n",op, head.Path)
- 	}
+	}
 	current,err := head.r.CurrentRef()
 	if err != nil {
 		return err
@@ -337,7 +338,7 @@ func (r *Ref) Cat(fullpath string) (out io.Reader, err error) {
 		return nil,fmt.Errorf("%s is not a file in %s",fullpath,r.r.Path())
 	}
 	shaname := strings.Split(parts[2],"\t")
-	cmd,out := r.r.Git("cat-file","blob",shaname)
+	cmd,out,_ = r.r.Git("cat-file","blob",shaname[0])
 	return out,cmd.Run()
 }
 
@@ -477,6 +478,15 @@ func (r *Repo) load_refs() {
 		res[ref.Path] = ref
 	}
 	r.refs = res
+}
+
+func (r *Repo) Refs() (res RefSlice) {
+	r.ReloadRefs()
+	res = make(RefSlice,0,10)
+	for _,v := range r.refs {
+		res = append(res,v)
+	}
+	return res
 }
 
 // Reload all the refs lazily.

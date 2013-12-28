@@ -11,12 +11,11 @@ func main() {
 		panic(err)
 	}
 	fmt.Printf("Initialized ourself!\n")
-	c,err := r.Config()
-	for k,v := range c.Find("user.") {
+	for k,v := range r.Find("user.") {
 		fmt.Printf("%s: %v\n",k,v)
 	}
-	c.Set("foo.bar","bar")
-	v,ok := c.Get("foo.bar")
+	r.Set("foo.bar","bar")
+	v,ok := r.Get("foo.bar")
 	fmt.Printf("%v: %v\n",v,ok)
 	if clean,statLines := r.IsClean(); clean {
 		fmt.Println("Repo is clean")
@@ -34,7 +33,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	for name,r := range r.Refs {
+	for name,r := range r.Refs() {
 		fmt.Printf("%s: %s\n",name,r.SHA)
 	}
 	tag.Delete()

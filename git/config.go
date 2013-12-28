@@ -36,9 +36,9 @@ func (r *Repo) ReloadConfig() {
 }
 
 // Get a specific config value.
-func (r *Repo) Get(k string) (v string, f bool) {
+func (r *Repo) Get(key string) (val string, found bool) {
 	r.read_config()
-	v,f = r.cfg[k]
+	val,found = r.cfg[key]
 	return
 }
 
@@ -52,16 +52,16 @@ func (r *Repo) maybeKillSection(prefix string) {
 }
 
 // Unset a config variable.
-func (r *Repo) Unset(k string) {
+func (r *Repo) Unset(key string) {
 	r.read_config()
-	if _,e := r.Get(k); e == true {
-		cmd, _, err := r.Git("config", "--unset-all",k)
-		delete(r.cfg,k)
+	if _,e := r.Get(key); e == true {
+		cmd, _, err := r.Git("config", "--unset-all",key)
+		delete(r.cfg,key)
 		if cmd.Run() == nil {
-			parts := strings.Split(k,".")
+			parts := strings.Split(key,".")
 			switch len(parts) {
 			case 0:  panic("Cannot happen!")
-			case 1:  r.maybeKillSection(k)
+			case 1:  r.maybeKillSection(key)
 			case 2:  r.maybeKillSection(parts[0])
 			default: r.maybeKillSection(strings.Join(parts[0:len(parts)-1],"."))
 			}
@@ -72,13 +72,13 @@ func (r *Repo) Unset(k string) {
 }
 
 // Set a config variable.
-func (r *Repo) Set(k,v string) {
-	r.Unset(k)
-	cmd, _, _ := r.Git("config","--add", k,v)
+func (r *Repo) Set(key,val string) {
+	r.Unset(key)
+	cmd, _, _ := r.Git("config","--add", key,val)
 	if err := cmd.Run(); err != nil {
 		panic("Cannot happen!")
 	}
-	r.cfg[k]=v
+	r.cfg[key]=val
 }
 
 // Find all config variables with a specific prefix.

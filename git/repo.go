@@ -221,9 +221,3 @@ func (r *Repo) Path() (path string) {
 		return r.WorkDir
 	}
 }
-
-
-
-
-
-
